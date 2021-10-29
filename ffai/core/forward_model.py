@@ -7,7 +7,7 @@ Classes and method for recursively tracing changes to objects.
 """
 from copy import deepcopy, copy
 from enum import Enum
-from pytest import set_trace
+from abc import ABC, abstractmethod
 
 
 class Reversible:
@@ -89,13 +89,14 @@ class Trajectory:
             self.current_step += 1
 
 
-
-class Step:
+class Step(ABC):
+    @abstractmethod
     def undo(self):
-        raise NotImplementedError("Method to be overwritten by subclass")
+        raise NotImplementedError()
 
+    @abstractmethod
     def redo(self):
-        raise NotImplementedError("Method to be overwritten by subclass")
+        raise NotImplementedError()
 
 
 class CallableStep(Step):
