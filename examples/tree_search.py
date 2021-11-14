@@ -53,8 +53,7 @@ class TreeSearcher:
     def __init__(self, game, action_value_func):
         self.game = game
         self.action_value_func = action_value_func
-        # self.root_node = None  TODO
-
+        self.root_node = None
 
     def set_new_root(self, game: ffai.Game) -> None:
         pass
@@ -64,9 +63,6 @@ class TreeSearcher:
         assert self.root_node is None
         root_node = ActionNode(parent=None,  )
         root_node.actions, root_node.value = self.action_value_func(self.game)
-
-
-
 
     def get_best_action(self) -> ffai.Action:
         pass
