@@ -7,11 +7,15 @@ from typing import Optional, Any, Callable, Tuple, List
 import ffai.core.forward_model as forward_model
 
 
-@dataclass
 class Node(ABC):
     parent: Optional['Node']
-    children: list = field(init=False, default_factory=lambda: [])
-    change_log: List[forward_model.Step] = field(init=False, default_factory=lambda: [])
+    children: List['Node']
+    change_log: List[forward_model.Step]
+
+    def __init__(self, parent: Optional['Node']):
+        self.parent = parent
+        self.children = []
+        self.change_log = []
 
     @abstractmethod
     def get_value(self):
@@ -21,11 +25,15 @@ class Node(ABC):
         print(f"in do thing, {self.children} ")
 
 
-@dataclass
 class ActionNode(Node):
     reward: float = field(init=False, default=0.0)
     value: float = field(init=False, default=0.0)
     actions: List[ffai.Action] = field(default_factory=lambda: [])
+
+    def __init__(self, parent, reward, actions):
+        super().__init__(parent)
+        self.reward = reward
+        self.actions = actions
 
     def get_value(self):
         pass
@@ -36,11 +44,17 @@ class ChanceNode(Node):
         pass
 
 
-@dataclass
+
 class TreeSearcher:
     game: ffai.Game
     action_value_func: Callable[[ffai.Game], Tuple[List[ffai.Action], float]]
-    root_node: ActionNode = field(init=False, default=None)
+    root_node: ActionNode
+
+    def __init__(self, game, action_value_func):
+        self.game = game
+        self.action_value_func = action_value_func
+        # self.root_node = None  TODO
+
 
     def set_new_root(self, game: ffai.Game) -> None:
         pass
@@ -58,8 +72,9 @@ class TreeSearcher:
         pass
 
 
-
-
+def expand(game: ffai.Game, action: ffai.Action) -> List[Tuple[forward_model.Step, float]]:
+    """Returns a list of tuples containing (Steps, probability) for each possible outcome"""
+    pass
 
 
 
