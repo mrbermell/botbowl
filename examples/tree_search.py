@@ -1,82 +1,20 @@
-from abc import ABC, abstractmethod
+
 
 import ffai
 import gym
-from dataclasses import dataclass, field
-from typing import Optional, Any, Callable, Tuple, List
-import ffai.core.forward_model as forward_model
+from typing import Tuple, List
+
+from TreeSearcher import TreeSearcher
 
 
-class Node(ABC):
-    parent: Optional['Node']
-    children: List['Node']
-    change_log: List[forward_model.Step]
-
-    def __init__(self, parent: Optional['Node']):
-        self.parent = parent
-        self.children = []
-        self.change_log = []
-
-    @abstractmethod
-    def get_value(self):
-        pass
-
-    def do_thing(self):
-        print(f"in do thing, {self.children} ")
-
-
-class ActionNode(Node):
-    reward: float = field(init=False, default=0.0)
-    value: float = field(init=False, default=0.0)
-    actions: List[ffai.Action] = field(default_factory=lambda: [])
-
-    def __init__(self, parent, reward, actions):
-        super().__init__(parent)
-        self.reward = reward
-        self.actions = actions
-
-    def get_value(self):
-        pass
-
-
-class ChanceNode(Node):
-    def get_value(self):
-        pass
+def get_random_action(game):
+    return ffai.ai.make_bot('random').act(game)
 
 
 
-class TreeSearcher:
-    game: ffai.Game
-    action_value_func: Callable[[ffai.Game], Tuple[List[ffai.Action], float]]
-    root_node: ActionNode
-
-    def __init__(self, game, action_value_func):
-        self.game = game
-        self.action_value_func = action_value_func
-        self.root_node = None
-
-    def set_new_root(self, game: ffai.Game) -> None:
-        pass
-
-    def explore(self, num_node: int = None, max_time: int = None) -> None:
-        # init root node - assume nothing saved
-        assert self.root_node is None
-        root_node = ActionNode(parent=None,  )
-        root_node.actions, root_node.value = self.action_value_func(self.game)
-
-    def get_best_action(self) -> ffai.Action:
-        pass
-
-
-def expand(game: ffai.Game, action: ffai.Action) -> List[Tuple[forward_model.Step, float]]:
-    """Returns a list of tuples containing (Steps, probability) for each possible outcome"""
-    pass
-
-
-
-
-def random_action_heuristic(game) -> Tuple[ffai.Action, float]:
-    pass
+def random_action_heuristic(game) -> Tuple[List[ffai.Action], float]:
+    action = get_random_action(game)
+    return [action], 0.0
 
 
 def hash_game_state(game: ffai.Game) -> int:
@@ -96,40 +34,29 @@ def get_action_with_roll(game: ffai.core.Game):
     return None
 
 
-if __name__ == "__main__":
+def main():
     env = gym.make('FFAI-3-v3')
     env.reset()
     game = env.game
 
+    for _ in range(10):
+        game.step(get_random_action(game))
+
+
     ts = TreeSearcher(game, random_action_heuristic)
     ts.explore(max_time=10)
-    action = ts.get_best_action()
+    # action = ts.get_best_action()
 
 
-
-    #n = ActionNode(None)
-    #print(n.change_log)
-
-    #exit()
-
-    random_bot = ffai.ai.make_bot('random')
-    for _ in range(10):
-        action = random_bot.act(game)
-        game.step(action)
-
-    for _ in range(10):
-        action = random_bot.act(game)
-        game.step(action)
-        print(f"{hash_game_state(game)} - {action.action_type}")
-    #env.render()
     exit()
+
 
 
     for _ in range(20):
         t = get_action_with_roll(game)
         if t is None:
             print(".")
-            action = random_bot.act(game)
+            action = get_random_action(game)
         else:
             action, roll = t
             player = game.get_active_player()
@@ -145,3 +72,6 @@ if __name__ == "__main__":
         game.step(action)
 
         env.render()
+
+if __name__ == "__main__":
+    main()
