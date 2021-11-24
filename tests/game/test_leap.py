@@ -1,5 +1,5 @@
 import pytest
-from ffai.core.game import *
+from botbowl.core.game import *
 from tests.util import *
 
 
@@ -146,7 +146,6 @@ def test_two_leaps():
     assert player.position == to
     assert player.state.moves == 2
     to = Square(player.position.x + 2, player.position.y)
-    D6.fix(4)
-    game.step(Action(ActionType.LEAP, player=player, position=to))
-    assert player.position != to  # Leap did not happen
-    assert player.state.moves == 2  # Leap did not happen
+
+    with pytest.raises(InvalidActionError):
+        game.step(Action(ActionType.LEAP, player=player, position=to))
