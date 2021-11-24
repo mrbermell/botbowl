@@ -1,6 +1,6 @@
 
 
-import ffai
+import botbowl
 import gym
 from typing import Tuple, List
 
@@ -8,34 +8,34 @@ from TreeSearcher import TreeSearcher
 
 
 def get_random_action(game):
-    return ffai.ai.make_bot('random').act(game)
+    return botbowl.ai.make_bot('random').act(game)
 
 
 
-def random_action_heuristic(game) -> Tuple[List[ffai.Action], float]:
+def random_action_heuristic(game) -> Tuple[List[botbowl.Action], float]:
     action = get_random_action(game)
     return [action], 0.0
 
 
-def hash_game_state(game: ffai.Game) -> int:
+def hash_game_state(game: botbowl.Game) -> int:
     s = "".join([f"{p.position.x}{p.position.y}{int(p.state.up)}"
                          for p in game.get_players_on_pitch()])
     s += "".join([f"{ball_pos.x}{ball_pos.y}" for ball_pos in game.get_ball_positions()])
     return hash(s)
 
 
-def get_action_with_roll(game: ffai.core.Game):
+def get_action_with_roll(game: botbowl.core.Game):
     aa = game.get_available_actions()
-    if aa[0].action_type == ffai.ActionType.MOVE:
+    if aa[0].action_type == botbowl.ActionType.MOVE:
         action_choice = aa[0]
         for i, roll in enumerate(action_choice.rolls):
             if len(roll) > 0:
-                return ffai.Action(ffai.ActionType.MOVE, position=action_choice.positions[i]), roll
+                return botbowl.Action(botbowl.ActionType.MOVE, position=action_choice.positions[i]), roll
     return None
 
 
 def main():
-    env = gym.make('FFAI-3-v3')
+    env = gym.make('botbowl-3-v3')
     env.reset()
     game = env.game
 
@@ -65,9 +65,9 @@ def main():
             succeed = input("fail? [y/n]") == "Y"
 
             if succeed:
-                ffai.D6.fix(roll[0])
+                botbowl.D6.fix(roll[0])
             else:
-                ffai.D6.fix(roll[0] - 1)
+                botbowl.D6.fix(roll[0] - 1)
 
         game.step(action)
 

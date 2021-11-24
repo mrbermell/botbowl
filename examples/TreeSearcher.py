@@ -1,8 +1,8 @@
-import ffai
-from ffai import ActionType, Action
+import botbowl
+from botbowl import ActionType, Action
 from typing import Optional, Callable, Tuple, List
 from abc import ABC, abstractmethod
-import ffai.core.forward_model as forward_model
+import botbowl.core.forward_model as forward_model
 from tests.util import get_game_turn
 
 
@@ -27,7 +27,7 @@ class Node(ABC):
 class ActionNode(Node):
     reward: float
     value: float
-    actions: List[ffai.Action]
+    actions: List[botbowl.Action]
 
     def __init__(self, parent, reward = 0.0, actions=None):
         super().__init__(parent)
@@ -45,8 +45,8 @@ class ChanceNode(Node):
 
 
 class TreeSearcher:
-    game: ffai.Game
-    action_value_func: Callable[[ffai.Game], Tuple[List[ffai.Action], float]]
+    game: botbowl.Game
+    action_value_func: Callable[[botbowl.Game], Tuple[List[botbowl.Action], float]]
     root_node: ActionNode
 
     def __init__(self, game, action_value_func):
@@ -54,7 +54,7 @@ class TreeSearcher:
         self.action_value_func = action_value_func
         self.root_node = None
 
-    def set_new_root(self, game: ffai.Game) -> None:
+    def set_new_root(self, game: botbowl.Game) -> None:
         pass
 
     def explore(self, num_node: int = None, max_time: int = None) -> None:
@@ -71,11 +71,11 @@ class TreeSearcher:
 
 
 
-    def get_best_action(self) -> ffai.Action:
+    def get_best_action(self) -> botbowl.Action:
         pass
 
 
-def expand(game: ffai.Game, action: ffai.Action) -> List[Tuple[forward_model.Step, float]]:
+def expand(game: botbowl.Game, action: botbowl.Action) -> List[Tuple[forward_model.Step, float]]:
     """
     :param game - game object used for calculations. Will be reverted to original state.
     :param action - action to be evaluated.
@@ -123,11 +123,11 @@ def expand(game: ffai.Game, action: ffai.Action) -> List[Tuple[forward_model.Ste
             # Success scenario
             rolls = [x for xs in fail_rolls for x in xs] #concat the list
             for _ in rolls:
-                ffai.D6.fix(6)
+                botbowl.D6.fix(6)
 
             game.step(action)
             print(f"{game.get_player_at(action.position)}")
-            assert len(ffai.D6.FixedRolls) == 0
+            assert len(botbowl.D6.FixedRolls) == 0
 
             for r in game.state.reports[report_idx:]:
                 print(r.outcome_type)
@@ -149,12 +149,12 @@ def main():
     game.config.pathfinding_enabled = True
 
     player = team.players[0]
-    start_square = ffai.Square(2,2)
-    target_square = ffai.Square(9,9)
-    game.put(player, ffai.Square(2,2))
+    start_square = botbowl.Square(2,2)
+    target_square = botbowl.Square(9,9)
+    game.put(player, botbowl.Square(2,2))
 
     opp_player = game.get_opp_team(team).players[0]
-    game.put(opp_player, ffai.Square(4, 4))
+    game.put(opp_player, botbowl.Square(4, 4))
 
     game.get_ball().move_to(target_square)
     game.get_ball().is_carried = False
