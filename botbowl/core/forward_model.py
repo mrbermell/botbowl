@@ -7,12 +7,13 @@ Classes and method for recursively tracing changes to objects.
 """
 from copy import deepcopy, copy
 from enum import Enum
-from abc import ABC, abstractmethod
 
 
 class Reversible:
 
-    def __init__(self, ignored_keys=[]):
+    def __init__(self, ignored_keys=None):
+        if ignored_keys is None:
+            ignored_keys = []
         super().__setattr__("_trajectory", None)
         super().__setattr__("_ignored_keys", set(ignored_keys))
 
@@ -89,14 +90,12 @@ class Trajectory:
             self.current_step += 1
 
 
-class Step(ABC):
-    @abstractmethod
+class Step:
     def undo(self):
-        raise NotImplementedError()
+        raise NotImplementedError("Method to be overwritten by subclass")
 
-    @abstractmethod
     def redo(self):
-        raise NotImplementedError()
+        raise NotImplementedError("Method to be overwritten by subclass")
 
 
 class CallableStep(Step):
@@ -331,6 +330,12 @@ def is_immutable(obj):
 
 replacement_type = [(list, ReversibleList), (dict, ReversibleDict), (set, ReversibleSet)]
 immutable_types = {int, float, str, tuple, bool, range, type(None)}
+
+
+def treat_as_immutable(cls):
+    """Used as decorator for classes that should never be tracked by forward model"""
+    immutable_types.add(cls)
+    return cls
 
 
 def add_reversibility(value, trajectory):
