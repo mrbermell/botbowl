@@ -4,12 +4,11 @@ import botbowl
 import gym
 from typing import Tuple, List
 
-from TreeSearcher import TreeSearcher
+from .TreeSearcher import TreeSearcher
 
 
 def get_random_action(game):
     return botbowl.ai.make_bot('random').act(game)
-
 
 
 def random_action_heuristic(game) -> Tuple[List[botbowl.Action], float]:

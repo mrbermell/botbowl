@@ -3,7 +3,7 @@ from botbowl import ActionType, Action
 from typing import Optional, Callable, Tuple, List
 from abc import ABC, abstractmethod
 import botbowl.core.forward_model as forward_model
-from tests.util import get_game_turn
+from tests.util import get_game_turn, get_custom_game_turn
 
 
 class Node(ABC):
@@ -121,7 +121,7 @@ def expand(game: botbowl.Game, action: botbowl.Action) -> List[Tuple[forward_mod
                     fail_rolls.append(rolls)
 
             # Success scenario
-            rolls = [x for xs in fail_rolls for x in xs] #concat the list
+            rolls = [x for xs in fail_rolls for x in xs]  # concat the list
             for _ in rolls:
                 botbowl.D6.fix(6)
 
@@ -142,33 +142,24 @@ def expand(game: botbowl.Game, action: botbowl.Action) -> List[Tuple[forward_mod
 
     return list(zip(steps, probs))
 
+
 def main():
-    game = get_game_turn()
-    team = game.get_agent_team(game.actor)
-    game.clear_board()
+    ball_pos = botbowl.Square(9, 9)
+    game, player, opp_player = get_custom_game_turn(player_positions=[(2, 2)],
+                                                    opp_player_positions=[(4, 4)],
+                                                    ball_position=ball_pos)
     game.config.pathfinding_enabled = True
-
-    player = team.players[0]
-    start_square = botbowl.Square(2,2)
-    target_square = botbowl.Square(9,9)
-    game.put(player, botbowl.Square(2,2))
-
-    opp_player = game.get_opp_team(team).players[0]
-    game.put(opp_player, botbowl.Square(4, 4))
-
-    game.get_ball().move_to(target_square)
-    game.get_ball().is_carried = False
-
     game.set_available_actions()
 
-    game.step(Action(ActionType.START_MOVE, position=start_square))
+    game.step(Action(ActionType.START_MOVE, position=player.position))
 
-    expansion = expand(game, Action(ActionType.MOVE, position=target_square))
+    expansion = expand(game, Action(ActionType.MOVE, position=ball_pos))
     for steps, prob in expansion:
         print(steps)
         print(prob)
 
     print("hej")
+
 
 if __name__ == "__main__":
     main()
