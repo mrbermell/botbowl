@@ -75,7 +75,8 @@ class TreeSearcher:
         pass
 
 
-def expand(game: botbowl.Game, action: botbowl.Action) -> List[Tuple[forward_model.Step, float]]:
+def expand(game: botbowl.Game, action: botbowl.Action) \
+        -> Tuple[List[forward_model.Step], List[float]]:
     """
     :param game - game object used for calculations. Will be reverted to original state.
     :param action - action to be evaluated.
@@ -138,28 +139,13 @@ def expand(game: botbowl.Game, action: botbowl.Action) -> List[Tuple[forward_mod
             # get fail squares and their rolls (dodge, gfi)
             # pickup ball  (should always be last square)
         else:
-            pass
+            # do the action, create next action node. Leave Game in new state.
+            game.step(action)
+            steps.append(game.trajectory.action_log[root_step:])
+            probs.append(path.prob)
 
-    return list(zip(steps, probs))
-
-
-def main():
-    ball_pos = botbowl.Square(9, 9)
-    game, player, opp_player = get_custom_game_turn(player_positions=[(2, 2)],
-                                                    opp_player_positions=[(4, 4)],
-                                                    ball_position=ball_pos)
-    game.config.pathfinding_enabled = True
-    game.set_available_actions()
-
-    game.step(Action(ActionType.START_MOVE, position=player.position))
-
-    expansion = expand(game, Action(ActionType.MOVE, position=ball_pos))
-    for steps, prob in expansion:
-        print(steps)
-        print(prob)
-
-    print("hej")
+    return steps, probs
 
 
 if __name__ == "__main__":
-    main()
+    pass
