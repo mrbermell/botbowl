@@ -118,10 +118,11 @@ class Game:
                 self.replay.record_action(start_action)
             self.step(start_action)
 
-    def step(self, action=None) -> None:
+    def step(self, action=None, slow_step=False) -> None:
         """
         Runs until an action from a human is required. If game requires an action to continue one must be given.
         :param action: Action to perform, can be None if game does not require any.
+        :param slow_step: if True, will only do one self._one_step()
         :return:
         """
 
@@ -171,7 +172,7 @@ class Game:
             else:
 
                 # If not in fast mode - wait for input before continuing
-                if not self.config.fast_mode:
+                if slow_step or not self.config.fast_mode:
                     break
 
                 # Else continue procedure with no action
