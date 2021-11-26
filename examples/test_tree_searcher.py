@@ -7,7 +7,7 @@ from botbowl import Square, Action, ActionType
 
 
 @pytest.mark.parametrize("data", [(Square(2, 2), [1.0]),
-                                  (Square(3, 3), [4/6])])
+                                  (Square(3, 3), [4/6, 2/6])])
 def test_expand_move(data):
     move_target, outcome_probs = data
     game, player, _, _ = get_custom_game_turn(player_positions=[(1, 1)],

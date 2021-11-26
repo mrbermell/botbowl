@@ -1,4 +1,5 @@
 import botbowl
+import numpy as np
 from botbowl import ActionType, Action
 from typing import Optional, Callable, Tuple, List
 from abc import ABC, abstractmethod
@@ -75,6 +76,10 @@ class TreeSearcher:
         pass
 
 
+def create_chance_node(steps: List[forward_model.Step], probs: List[float]) -> ChanceNode:
+    pass
+
+
 def expand(game: botbowl.Game, action: botbowl.Action) \
         -> Tuple[List[forward_model.Step], List[float]]:
     """
@@ -136,6 +141,23 @@ def expand(game: botbowl.Game, action: botbowl.Action) \
             steps.append(game.trajectory.action_log[root_step:])
             probs.append(path.prob)
 
+            game.revert(root_step)
+            game.set_available_actions()
+            #which roll shall fail?
+            p = np.array(rolls)/6
+            p /= np.sum(p)
+            index_of_failure = np.random.choice(range(len(p)), 1, p=p)[0]
+            for _ in range(index_of_failure):
+                botbowl.D6.fix(6)
+            botbowl.D6.fix(1)
+
+            game.config.fast_mode = False
+            game.step(action)
+            while type(game.get_procedure()) is not botbowl.KnockDown:
+                game.step()
+
+            pass
+            print("hej")
             # get fail squares and their rolls (dodge, gfi)
             # pickup ball  (should always be last square)
         else:
@@ -145,6 +167,29 @@ def expand(game: botbowl.Game, action: botbowl.Action) \
             probs.append(path.prob)
 
     return steps, probs
+
+def expand_knockdown(game: botbowl.Game):
+    # noinspection PyTypeChecker
+    proc: botbowl.KnockDown = game.get_procedure()
+    assert type(proc) is botbowl.KnockDown
+
+    if proc.in_crowd:
+        # Doesn't matter, we make it a KO because it's faster
+        botbowl.D6.fix(5)
+        botbowl.D6.fix(4)
+
+
+    else:
+
+
+        accumulated_prob_2d_roll = (np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36)
+        p_armorbreak = accumulated_prob_2d_roll[ proc.player.get_av() + 1 ]
+        p_injury_removal = accumulated_prob_2d_roll[8] # KO on
+
+        # Two scenarios goes here: Prone/Stun and Removal
+
+        # Prone/Stun
+
 
 
 if __name__ == "__main__":
