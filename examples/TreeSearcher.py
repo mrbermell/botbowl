@@ -6,16 +6,42 @@ from abc import ABC, abstractmethod
 import botbowl.core.forward_model as forward_model
 from tests.util import get_game_turn, get_custom_game_turn
 
+from botbowl.core.pathfinding.python_pathfinding import Path
+
+NodeAction = botbowl.Action
+
+class ActionSampler:
+    actions: List[NodeAction]
+    def __init__(self, game: botbowl.Game):
+
+        actions = []
+        for action_choice in game.get_available_actions():
+            positions = action_choice.positions
+            if len(positions)>0:
+                for sq in positions:
+                    actions.append(botbowl.Action(action_choice.action_type, position=sq))
+            else:
+                actions.append(botbowl.Action(action_choice.action_type))
+
+
+        self.actions = actions
+
+    def get_action(self) -> NodeAction:
+        return np.random.choice(self.actions, 1)[0]
+
+    def __len__(self):
+        return len(self.actions)
+
 
 class Node(ABC):
     parent: Optional['Node']
     children: List['Node']
     change_log: List[forward_model.Step]
 
-    def __init__(self, parent: Optional['Node']):
+    def __init__(self, parent: Optional['Node'], steps: [List[forward_model.Step]]):
         self.parent = parent
         self.children = []
-        self.change_log = []
+        self.change_log = steps
 
     @abstractmethod
     def get_value(self):
@@ -28,26 +54,43 @@ class Node(ABC):
 class ActionNode(Node):
     reward: float
     value: float
-    actions: List[botbowl.Action]
+    action_sampler: ActionSampler
 
-    def __init__(self, parent, reward = 0.0, actions=None):
-        super().__init__(parent)
+    def __init__(self, parent: Optional[Node], steps: List[forward_model.Step], action_sampler: ActionSampler, reward = 0.0):
+        super().__init__(parent, steps)
         self.reward = reward
-        self.actions = [] if actions is None else actions
+        self.action_sampler = action_sampler
 
     def get_value(self):
         pass
 
 
 class ChanceNode(Node):
+    """
+    Contains different outcomes of dices rolls.
+
+    If there are not any connected children,
+    then step the game from here until there are available actions
+    could possibly be converted to an ActionNode
+    """
+
+    child_probability: List[float]
+
+    def __init__(self, parent: Optional[Node], steps: List[forward_model.Step]):
+        super().__init__(parent, steps)
+        self.child_probability = []
+
+    def connect_child(self, child: Node, prob: float):
+        self.children.append(child)
+        self.child_probability.append(prob)
+
     def get_value(self):
         pass
 
 
-
 class TreeSearcher:
     game: botbowl.Game
-    action_value_func: Callable[[botbowl.Game], Tuple[List[botbowl.Action], float]]
+    action_value_func: Callable[[botbowl.Game], ActionSampler]
     root_node: ActionNode
 
     def __init__(self, game, action_value_func):
@@ -81,7 +124,7 @@ def create_chance_node(steps: List[forward_model.Step], probs: List[float]) -> C
 
 
 def expand(game: botbowl.Game, action: botbowl.Action) \
-        -> Tuple[List[forward_model.Step], List[float]]:
+        -> Node:
     """
     :param game - game object used for calculations. Will be reverted to original state.
     :param action - action to be evaluated.
@@ -110,85 +153,132 @@ def expand(game: botbowl.Game, action: botbowl.Action) \
     # MOVE
 
     if action.action_type == ActionType.MOVE:
-        print("MOVE!")
-        path = game.state.stack.peek().paths[action.position]
-        print(f"{path.prob=}")
-        print(f"{path.rolls=}")
+
+        path: Path = game.get_procedure().paths[action.position]
 
         is_pickup = game.get_ball().position == action.position
-        print(f"{is_pickup=}")
+
 
         if path.prob < 1.0:
-            fail_squares = []
-            fail_rolls = []
-            for sq, rolls in zip(path.steps, path.rolls):
-                if len(rolls) > 0:
-                    fail_squares.append(sq)
-                    fail_rolls.append(rolls)
 
-            # Success scenario
-            rolls = [x for xs in fail_rolls for x in xs]  # concat the list
-            for _ in rolls:
-                botbowl.D6.fix(6)
+            # Concat list of rolls
+            rolls = [x for xs in path.rolls for x in xs]
+            if is_pickup:
+                rolls.pop()
 
-            game.step(action)
-            print(f"{game.get_player_at(action.position)}")
-            assert len(botbowl.D6.FixedRolls) == 0
+            # Decide which roll to fail. step until there and create the chance node.
 
-            for r in game.state.reports[report_idx:]:
-                print(r.outcome_type)
-
-            steps.append(game.trajectory.action_log[root_step:])
-            probs.append(path.prob)
-
-            game.revert(root_step)
-            game.set_available_actions()
-            #which roll shall fail?
-            p = np.array(rolls)/6
+            # which roll shall fail?
+            p = np.array(rolls) / 6
             p /= np.sum(p)
-            index_of_failure = np.random.choice(range(len(p)), 1, p=p)[0]
+            index_of_failure = np.random.choice(range(len(rolls)), 1, p=p)[0]
+
+            # fix all rolls up until the failure, and step them
             for _ in range(index_of_failure):
                 botbowl.D6.fix(6)
+
+            game.step(action, slow_step=True)
+            while len(botbowl.D6.FixedRolls) > 0:
+                game.step(slow_step=True)
+
+            # Create the ChanceNode
+            steps = game.trajectory.action_log[root_step:]
+            chance_node = ChanceNode(parent=None, steps=steps)
+
+            #reset the root step to new chance node
+            root_step = game.get_step()
+
+            ### SUCCESS SCENARIO ###
+            for _ in range(len(rolls) - index_of_failure):
+                botbowl.D6.fix(6)
+            while len(botbowl.D6.FixedRolls) > 0:
+                game.step(slow_step=True)
+
+            if is_pickup:
+                # need to expand a pickup node, gaah!
+                raise NotImplementedError()
+            else:
+                while len(game.get_available_actions()) == 0:
+                    game.step(slow_step=True)
+                steps = game.trajectory.action_log[root_step:]
+                action_node = ActionNode(parent=chance_node, steps=steps, action_sampler=ActionSampler(game))
+                chance_node.connect_child(action_node, path.prob)
+
+            ### FAILURE SCENARIO ###
+            game.revert(root_step)
+            game.set_available_actions()
+            player = game.get_active_player()
+            assert player is not None
+            if player.has_skill(botbowl.Skill.DODGE) or game.can_use_reroll(player.team):
+                # how to handle this? Gaah!
+                raise NotImplementedError()
+
             botbowl.D6.fix(1)
+            while True:
+                game.step(slow_step=True)
+                if type(game.get_procedure()) is botbowl.KnockDown and game.get_procedure().player is player:
+                    break
 
-            game.config.fast_mode = False
-            game.step(action)
-            while type(game.get_procedure()) is not botbowl.KnockDown:
-                game.step()
+            steps = game.trajectory.action_log[root_step:]
+            knockdown_chance_node = ChanceNode(parent=chance_node, steps=steps)
+            expand_knockdown(knockdown_chance_node, game)
+            chance_node.connect_child(knockdown_chance_node, 1-path.prob)
 
-            pass
-            print("hej")
-            # get fail squares and their rolls (dodge, gfi)
-            # pickup ball  (should always be last square)
+            return chance_node
+
         else:
-            # do the action, create next action node. Leave Game in new state.
+            # Do the action, create next action node. Leave Game in new state.
+            root_step = game.get_step()
             game.step(action)
-            steps.append(game.trajectory.action_log[root_step:])
-            probs.append(path.prob)
+            steps = game.trajectory.action_log[root_step:]
 
-    return steps, probs
+            return ActionNode(None, steps, action_sampler=ActionSampler(game))
 
-def expand_knockdown(game: botbowl.Game):
+
+
+    #return steps, probs
+
+def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
+    """
+    :param node: node to store the different outcomes in.
+    :param game:
+    """
+
     # noinspection PyTypeChecker
     proc: botbowl.KnockDown = game.get_procedure()
     assert type(proc) is botbowl.KnockDown
+    assert proc.armor_roll or proc.in_crowd
+
+    def fix_step_connect(d6_fixes: List[int], prob: float):
+        """
+        Fixes d6 rolls and steps until the proc is not on stack anymore.
+        Save into node afterwards
+
+        I will probably make this a standalone function later.
+        """
+        for roll_fix in d6_fixes:
+            botbowl.D6.fix(roll_fix)
+        root_step = game.get_step()
+        while proc in game.state.stack.items:
+            game.step(slow_step=True)
+        steps = game.trajectory.action_log[root_step:]
+        new_chance_node = ChanceNode(parent=node, steps=steps)
+        node.connect_child(new_chance_node, prob=prob)
+        assert len(botbowl.D6.FixedRolls) == 0
+        game.revert(root_step)
+
 
     if proc.in_crowd:
-        # Doesn't matter, we make it a KO because it's faster
-        botbowl.D6.fix(5)
-        botbowl.D6.fix(4)
-
-
+        fix_step_connect(d6_fixes=[1,2], prob=1.0) # injury roll is a KO
     else:
-
-
         accumulated_prob_2d_roll = (np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36)
         p_armorbreak = accumulated_prob_2d_roll[ proc.player.get_av() + 1 ]
-        p_injury_removal = accumulated_prob_2d_roll[8] # KO on
+        p_injury_removal = accumulated_prob_2d_roll[8] # KO
 
-        # Two scenarios goes here: Prone/Stun and Removal
+        fix_step_connect(d6_fixes=[1, 2], prob=1.0 - p_armorbreak)  # No armorbreak
+        fix_step_connect(d6_fixes=[6, 5, 1, 2], prob=p_armorbreak * (1.0 - p_injury_removal))  # Stunned
+        fix_step_connect(d6_fixes=[6, 5, 4, 5], prob=p_armorbreak * p_injury_removal)  # KO
 
-        # Prone/Stun
 
 
 
