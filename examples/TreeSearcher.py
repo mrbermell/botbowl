@@ -8,10 +8,14 @@ from tests.util import get_game_turn, get_custom_game_turn
 
 from botbowl.core.pathfinding.python_pathfinding import Path
 
+accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
+
 NodeAction = botbowl.Action
+
 
 class ActionSampler:
     actions: List[NodeAction]
+
     def __init__(self, game: botbowl.Game):
 
         actions = []
@@ -22,7 +26,6 @@ class ActionSampler:
                     actions.append(botbowl.Action(action_choice.action_type, position=sq))
             else:
                 actions.append(botbowl.Action(action_choice.action_type))
-
 
         self.actions = actions
 
@@ -110,17 +113,8 @@ class TreeSearcher:
 
         self.root_node = root_node
 
-
-
-
-
-
     def get_best_action(self) -> botbowl.Action:
         pass
-
-
-def create_chance_node(steps: List[forward_model.Step], probs: List[float]) -> ChanceNode:
-    pass
 
 
 def expand(game: botbowl.Game, action: botbowl.Action) \
@@ -155,9 +149,7 @@ def expand(game: botbowl.Game, action: botbowl.Action) \
     if action.action_type == ActionType.MOVE:
 
         path: Path = game.get_procedure().paths[action.position]
-
         is_pickup = game.get_ball().position == action.position
-
 
         if path.prob < 1.0:
 
@@ -213,16 +205,8 @@ def expand(game: botbowl.Game, action: botbowl.Action) \
                 # how to handle this? Gaah!
                 raise NotImplementedError()
 
-            botbowl.D6.fix(1)
-            while True:
-                game.step(slow_step=True)
-                if type(game.get_procedure()) is botbowl.KnockDown and game.get_procedure().player is player:
-                    break
-
-            steps = game.trajectory.action_log[root_step:]
-            knockdown_chance_node = ChanceNode(parent=chance_node, steps=steps)
-            expand_knockdown(knockdown_chance_node, game)
-            chance_node.connect_child(knockdown_chance_node, 1-path.prob)
+            fix_step_connect(game, chance_node, d6_fixes=[1], prob=1-path.prob,
+                             step_condition=lambda g: not type(g.get_procedure()) is botbowl.KnockDown)
 
             return chance_node
 
@@ -235,52 +219,49 @@ def expand(game: botbowl.Game, action: botbowl.Action) \
             return ActionNode(None, steps, action_sampler=ActionSampler(game))
 
 
+def fix_step_connect(game: botbowl.Game,
+                     parent: ChanceNode,
+                     d6_fixes: List[int],
+                     prob: float,
+                     step_condition: Callable[[botbowl.Game], bool]):
+    for roll_fix in d6_fixes:
+        botbowl.D6.fix(roll_fix)
+    root_step = game.get_step()
+    while step_condition(game):
+        game.step(slow_step=True)
+    steps = game.trajectory.action_log[root_step:]
+    new_chance_node = ChanceNode(parent=parent, steps=steps)
+    parent.connect_child(new_chance_node, prob=prob)
+    assert len(botbowl.D6.FixedRolls) == 0
+    game.revert(root_step)
 
-    #return steps, probs
 
 def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
     """
     :param node: node to store the different outcomes in.
     :param game:
     """
-
     # noinspection PyTypeChecker
     proc: botbowl.KnockDown = game.get_procedure()
     assert type(proc) is botbowl.KnockDown
     assert proc.armor_roll or proc.in_crowd
 
-    def fix_step_connect(d6_fixes: List[int], prob: float):
-        """
-        Fixes d6 rolls and steps until the proc is not on stack anymore.
-        Save into node afterwards
+    def step_condition(g: botbowl.Game):
+        return proc in g.state.stack.items
 
-        I will probably make this a standalone function later.
-        """
-        for roll_fix in d6_fixes:
-            botbowl.D6.fix(roll_fix)
-        root_step = game.get_step()
-        while proc in game.state.stack.items:
-            game.step(slow_step=True)
-        steps = game.trajectory.action_log[root_step:]
-        new_chance_node = ChanceNode(parent=node, steps=steps)
-        node.connect_child(new_chance_node, prob=prob)
-        assert len(botbowl.D6.FixedRolls) == 0
-        game.revert(root_step)
-
+    def _fix_step_connect(d6_fixes: List[int], prob: float):
+        fix_step_connect(game, node, d6_fixes, prob, step_condition)
 
     if proc.in_crowd:
-        fix_step_connect(d6_fixes=[1,2], prob=1.0) # injury roll is a KO
+        _fix_step_connect(d6_fixes=[1, 2], prob=1.0)  # injury roll is a KO
     else:
-        accumulated_prob_2d_roll = (np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36)
-        p_armorbreak = accumulated_prob_2d_roll[ proc.player.get_av() + 1 ]
-        p_injury_removal = accumulated_prob_2d_roll[8] # KO
+        p_armorbreak = accumulated_prob_2d_roll[ proc.player.get_av() + 1]
+        p_injury_removal = accumulated_prob_2d_roll[8]  # KO
 
-        fix_step_connect(d6_fixes=[1, 2], prob=1.0 - p_armorbreak)  # No armorbreak
-        fix_step_connect(d6_fixes=[6, 5, 1, 2], prob=p_armorbreak * (1.0 - p_injury_removal))  # Stunned
-        fix_step_connect(d6_fixes=[6, 5, 4, 5], prob=p_armorbreak * p_injury_removal)  # KO
-
+        _fix_step_connect(d6_fixes=[1, 2], prob=1.0 - p_armorbreak)  # No armorbreak
+        _fix_step_connect(d6_fixes=[6, 5, 1, 2], prob=p_armorbreak * (1.0 - p_injury_removal))  # Stunned
+        _fix_step_connect(d6_fixes=[6, 5, 4, 5], prob=p_armorbreak * p_injury_removal)  # KO
 
 
-
-if __name__ == "__main__":
-    pass
+#if __name__ == "__main__":
+#    pass
