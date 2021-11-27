@@ -47,7 +47,7 @@ class Node(ABC):
         self.parent = parent
         self.children = []
         self.change_log = steps
-å
+
     @abstractmethod
     def get_value(self):
         pass
