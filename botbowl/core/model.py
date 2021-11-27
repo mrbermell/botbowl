@@ -15,7 +15,7 @@ import pickle
 from math import sqrt
 from botbowl.core.util import *
 from botbowl.core.table import *
-from botbowl.core.forward_model import Immutable, Reversible, CallableStep
+from botbowl.core.forward_model import Immutable, Reversible, CallableStep, treat_as_immutable, immutable_after_init
 
 
 class ReplayStep:
@@ -473,7 +473,8 @@ class Pitch(Reversible):
         }
 
 
-class ActionChoice(Immutable):
+@immutable_after_init
+class ActionChoice:
 
     def __init__(self, action_type, team, positions=None, players=None, rolls=None, block_dice=None, skill=None, paths=None, disabled=False):
         self.action_type = action_type
@@ -509,10 +510,10 @@ class ActionChoice(Immutable):
         }
 
 
-class Action(Reversible):
+@treat_as_immutable
+class Action:
 
     def __init__(self, action_type, position=None, player=None):
-        super().__init__()
         self.action_type = action_type
         self.position = position
         self.player = player
@@ -569,10 +570,10 @@ class Die:
         Exception("Method not implemented")
 
 
-class DiceRoll(Reversible):
+@treat_as_immutable
+class DiceRoll:
 
     def __init__(self, dice, modifiers=0, target=None, d68=False, roll_type=RollType.AGILITY_ROLL, target_higher=True, target_lower=False, highest_succeed=True, lowest_fail=True):
-        super().__init__()
         self.dice = dice
         self.sum = 0
         self.d68 = d68
@@ -839,7 +840,6 @@ class Catchable(Piece):
     def move(self, x, y):
         # This is unfortunately way slower than below, but Square is Immutable
         self.position = Square(self.position.x + x, self.position.y + y)
-
         #self.position.x += x
         #self.position.y += y
 
@@ -884,7 +884,7 @@ class Ball(Catchable, Reversible):
                f"is_carried={self.is_carried})"
 
 
-class Bomb(Catchable):
+class Bomb(Catchable, Reversible):
 
     def __init__(self, position, on_ground=True, is_carried=False):
         super().__init__(position, on_ground, is_carried)
@@ -1024,28 +1024,15 @@ class Player(Piece, Reversible):
     def __repr__(self):
         return f"Player(position={self.position if self.position is not None else 'None'}, {self.role.name}, state={self.state})"
 
-class Square(Immutable):
 
-    def __init__(self, x, y):
-        self._x = x
-        self._y = y
+@immutable_after_init
+class Square:
+    x: int
+    y: int
 
-    @property
-    def x(self):
-        return self._x
-
-    @x.setter
-    def x(self, x):
-        raise AttributeError("Squares is immutable, how dare you?!")
-
-    @property
-    def y(self):
-        return self._y
-
-    @y.setter
-    def y(self, y):
-        raise AttributeError("Squares is immutable, how dare you?!")
-
+    def __init__(self, x: int, y: int):
+        self.x = x
+        self.y = y
 
     def to_json(self):
         return {
@@ -1074,6 +1061,7 @@ class Square(Immutable):
 
     def __repr__(self):
         return f"Square({self.x}, {self.y})"
+
 
 class Race:
 
@@ -1129,7 +1117,8 @@ class Team(Reversible):
         return self.team_id
 
 
-class Outcome(Immutable):
+@immutable_after_init
+class Outcome:
 
     def __init__(self, outcome_type, position=None, player=None, opp_player=None, rolls=None, team=None, n=0, skill=None):
         self.outcome_type = outcome_type
