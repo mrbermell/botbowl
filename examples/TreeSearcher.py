@@ -1,3 +1,5 @@
+from more_itertools import collapse
+
 import botbowl
 import numpy as np
 from botbowl import ActionType, Action
@@ -45,7 +47,7 @@ class Node(ABC):
         self.parent = parent
         self.children = []
         self.change_log = steps
-
+å
     @abstractmethod
     def get_value(self):
         pass
@@ -107,7 +109,7 @@ class TreeSearcher:
     def explore(self, num_node: int = None, max_time: int = None) -> None:
         # init root node - assume nothing saved
         assert self.root_node is None
-        root_node = ActionNode(parent=None )
+        root_node = ActionNode(parent=None)
         root_node.actions, root_node.value = self.action_value_func(self.game)
         assert len(root_node.actions) > 0
 
@@ -154,7 +156,7 @@ def expand(game: botbowl.Game, action: botbowl.Action) \
         if path.prob < 1.0:
 
             # Concat list of rolls
-            rolls = [x for xs in path.rolls for x in xs]
+            rolls = list(collapse(path.rolls))
             if is_pickup:
                 rolls.pop()
 
