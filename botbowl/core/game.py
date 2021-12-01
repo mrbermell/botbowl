@@ -5,11 +5,13 @@ Year: 2018
 ==========================
 This module contains the Game class, which is the main class and interface used to interact with a game in botbowl.
 """
-from typing import Optional, Tuple, List, Union
+from itertools import chain
+from typing import Optional, Tuple, List, Union, Any
 
 from botbowl.core.load import *
 from botbowl.core.procedure import *
 from botbowl.core.forward_model import Trajectory, MovementStep, Step
+from copy import deepcopy
 
 
 class InvalidActionError(Exception):
@@ -17,6 +19,24 @@ class InvalidActionError(Exception):
 
 
 class Game:
+    replay: Optional[Replay]
+    game_id: str
+    home_agent: Agent
+    away_agent: Agent
+    arena: TwoPlayerArena
+    config: Configuration
+    ruleset: RuleSet
+    state: GameState
+    rnd: np.random.RandomState
+    ff_map: Any #??
+    start_time: float
+    end_time: float
+    last_request_time: float
+    last_action_time: float
+    forced_action: Any #??
+    action: Action
+    trajectory: Trajectory
+    square_shortcut: List[List['Square']]
 
     def __init__(self, game_id, home_team: Team, away_team: Team,
                  home_agent: Agent, away_agent: Agent,
@@ -958,14 +978,15 @@ class Game:
         :param up: If specified, filter by ther players up state.
         :return: Players on the pitch who's on team.
         """
-        players = []
-        for y in range(len(self.state.pitch.board)):
-            for x in range(len(self.state.pitch.board[y])):
-                player = self.state.pitch.board[y][x]
-                if player is not None and (team is None or player.team == team) and (
-                        used is None or used == player.state.used) and (up is None or up == player.state.up):
-                    players.append(player)
-        return players
+        if team is None:
+            iter_players = chain(self.state.home_team.players, self.state.away_team.players)
+        else:
+            iter_players = iter(team.players)
+
+        return [player for player in iter_players
+                if player.position is not None
+                and (used is None or used == player.state.used)
+                and (up is None or up == player.state.up)]
 
     def pitch_to_reserves(self, player: Player) -> None:
         """
@@ -1616,7 +1637,7 @@ class Game:
                 if from_position.distance(square, manhattan=True) >= 3:
                     include = True
             if include:
-                if self.is_out_of_bounds(square):
+                if square.out_of_bounds:
                     squares_out.append(square)
                 elif self.get_player_at(square) is None:
                     squares_empty.append(square)
@@ -1636,7 +1657,10 @@ class Game:
         :param y:
         :return: A square with the position (x,y)
         """
-        return self.square_shortcut[y][x]
+        try:
+            return self.square_shortcut[y][x]
+        except IndexError:
+            return Square(x, y)
 
     def get_adjacent_squares(self, position: Square, diagonal=True, out=False, occupied=True, distance=1) \
             -> List[Square]:
@@ -1656,7 +1680,7 @@ class Game:
                 if yy == 0 and xx == 0:
                     continue
                 sq = self.get_square(position.x + xx, position.y + yy)
-                if not out and self.is_out_of_bounds(sq):
+                if not out and sq.out_of_bounds:
                     continue
                 if not occupied and self.get_player_at(sq) is not None:
                     continue
@@ -1737,7 +1761,7 @@ class Game:
                 if yy == 0 and xx == 0:
                     continue
                 p = self.get_square(opp_player.position.x + xx, opp_player.position.y + yy)
-                if not self.is_out_of_bounds(p) and player.position != p:
+                if not p.out_of_bounds and player.position != p:
                     player_at = self.get_player_at(p)
                     if player_at is not None:
                         if player_at.team == player.team:
@@ -1774,7 +1798,7 @@ class Game:
                 if yy == 0 and xx == 0:
                     continue
                 p = self.get_square(opp_player.position.x + xx, opp_player.position.y + yy)
-                if not self.is_out_of_bounds(p) and player.position != p:
+                if not p.out_of_bounds and player.position != p:
                     player_at = self.get_player_at(p)
                     if player_at is not None:
                         if player_at.team == player.team and self.can_assist(player_at, foul):
@@ -2088,7 +2112,7 @@ class Game:
         for y in range(len(self.state.pitch.board)):
             for x in range(len(self.state.pitch.board[y])):
                 to_position = self.get_square(x, y)
-                if self.is_out_of_bounds(to_position) or position == to_position:
+                if to_position.out_of_bounds or position == to_position:
                     continue
                 distance = self.get_pass_distance(position, to_position)
                 if distance in distances_allowed:
