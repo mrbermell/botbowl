@@ -2,7 +2,7 @@ import pytest
 from pytest import approx
 
 from tests.util import get_custom_game_turn
-from .TreeSearcher import remove_randomness, ActionNode, ActionSampler, expand_action, ChanceNode
+from .TreeSearcher import ActionNode, expand_action, ChanceNode
 import botbowl
 from botbowl import Square, Action, ActionType
 
@@ -12,6 +12,7 @@ from botbowl import Square, Action, ActionType
                                   (Square(3, 3), [4/6, 2/6])])
 def test_expand_move(data):
     move_target, outcome_probs = data
+    assert sum(outcome_probs) == 1.0
     game, player, _, _ = get_custom_game_turn(player_positions=[(1, 1)],
                                               opp_player_positions=[(1, 3), (3, 1)],
                                               ball_position=(5, 5))
@@ -20,7 +21,7 @@ def test_expand_move(data):
     game.enable_forward_model()
     game.step(Action(ActionType.START_MOVE, position=player.position))
 
-    parent_action_node = ActionNode(step_nbr=game.get_step(), parent=None, steps=[], action_sampler=ActionSampler(game))
+    parent_action_node = ActionNode(game, parent=None)
 
     action = Action(ActionType.MOVE, position=move_target)
     next_node = expand_action(game, action, parent_action_node)
@@ -28,7 +29,6 @@ def test_expand_move(data):
     assert next_node.parent is parent_action_node
 
     if len(outcome_probs) == 1:
-        assert sum(outcome_probs) == 1.0
         assert type(next_node) is ActionNode
     else:
         next_node: ChanceNode

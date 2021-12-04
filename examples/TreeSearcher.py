@@ -2,12 +2,11 @@ from more_itertools import collapse
 
 import botbowl
 import botbowl.core.procedure as procedures
-from botbowl import ActionType, Action
 import botbowl.core.forward_model as forward_model
-from botbowl.core.pathfinding.python_pathfinding import Path
+#from botbowl.core.pathfinding.python_pathfinding import Path
 
 import numpy as np
-from typing import Optional, Callable, Tuple, List, Union
+from typing import Optional, Callable, List, Union
 from abc import ABC, abstractmethod
 
 from contextlib import contextmanager
@@ -57,11 +56,11 @@ class Node(ABC):
     change_log: List[forward_model.Step]
     step_nbr: int  # forward model's step count
 
-    def __init__(self, step_nbr: int, parent: Optional['Node'], steps: [List[forward_model.Step]]):
-        self.step_nbr = step_nbr
+    def __init__(self, game: botbowl.Game, parent: Optional['Node']):
+        self.step_nbr = game.get_step()
         self.parent = parent
         self.children = []
-        self.change_log = steps
+        self.change_log = game.trajectory.action_log[self.step_nbr:] if parent is not None else []
 
     @abstractmethod
     def get_value(self):
@@ -73,11 +72,10 @@ class ActionNode(Node):
     value: float
     action_sampler: ActionSampler
 
-    def __init__(self, step_nbr: int, parent: Optional[Node], steps: List[forward_model.Step],
-                 action_sampler: ActionSampler, reward=0.0):
-        super().__init__(step_nbr, parent, steps)
+    def __init__(self, game: botbowl.Game, parent: Optional[Node], reward=0.0):
+        super().__init__(game, parent)
         self.reward = reward
-        self.action_sampler = action_sampler
+        self.action_sampler = ActionSampler(game)
 
     def get_value(self):
         pass
@@ -94,8 +92,8 @@ class ChanceNode(Node):
 
     child_probability: List[float]
 
-    def __init__(self, step_nbr: int, parent: Optional[Node], steps: List[forward_model.Step]):
-        super().__init__(step_nbr, parent, steps)
+    def __init__(self, game: botbowl.Game, parent: Optional[Node]):
+        super().__init__(game, parent)
         self.child_probability = []
 
     def connect_child(self, child: Node, prob: float):
@@ -120,13 +118,7 @@ class TreeSearcher:
         pass
 
     def explore(self, num_node: int = None, max_time: int = None) -> None:
-        # init root node - assume nothing saved
-        assert self.root_node is None
-        root_node = ActionNode(parent=None)
-        root_node.actions, root_node.value = self.action_value_func(self.game)
-        assert len(root_node.actions) > 0
-
-        self.root_node = root_node
+        pass
 
     def get_best_action(self) -> botbowl.Action:
         pass
@@ -172,10 +164,9 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False) -
         with remove_randomness(game):
             game.step()
 
-    current_step = game.get_step()
-    steps = game.revert(parent.step_nbr)
-    return ActionNode(parent=parent, steps=steps, step_nbr=current_step, action_sampler=ActionSampler(game))
-
+    action_node = ActionNode(game, parent)
+    game.revert(parent.step_nbr)
+    return action_node
 
 def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     active_proc: Union[procedures.GFI, procedures.Dodge] = game.get_procedure()
@@ -205,8 +196,7 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     while len(botbowl.D6.FixedRolls) > 0:
         game.step(slow_step=True)
 
-    steps = game.trajectory.action_log[parent.step_nbr:]
-    new_parent = ChanceNode(parent=parent, steps=steps, step_nbr=game.get_step())
+    new_parent = ChanceNode(game, parent)
 
     ### SUCCESS SCENARIO ###
     for _ in range(len(rolls) - index_of_failure):
@@ -243,8 +233,8 @@ def fix_step_connect(game: botbowl.Game,
     root_step = game.get_step()
     while step_condition(game):
         game.step(slow_step=True)
-    steps = game.revert(root_step)
-    new_chance_node = ChanceNode(parent=parent, steps=steps)
+    new_chance_node = ChanceNode(game, parent)
+    game.revert(root_step)
     parent.connect_child(new_chance_node, prob=prob)
     assert len(botbowl.D6.FixedRolls) == 0
 
