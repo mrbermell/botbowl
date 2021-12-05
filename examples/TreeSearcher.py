@@ -3,10 +3,10 @@ from more_itertools import collapse
 import botbowl
 import botbowl.core.procedure as procedures
 import botbowl.core.forward_model as forward_model
-#from botbowl.core.pathfinding.python_pathfinding import Path
+# from botbowl.core.pathfinding.python_pathfinding import Path
 
 import numpy as np
-from typing import Optional, Callable, List, Union
+from typing import Optional, Callable, List, Union, Dict, Any
 from abc import ABC, abstractmethod
 
 from contextlib import contextmanager
@@ -112,7 +112,7 @@ class TreeSearcher:
     def __init__(self, game, action_value_func):
         self.game = game
         self.action_value_func = action_value_func
-        self.root_node = None
+        self.root_node = ActionNode(game, None)
 
     def set_new_root(self, game: botbowl.Game) -> None:
         pass
@@ -127,7 +127,7 @@ class TreeSearcher:
         pass
 
 
-def expand_action(game: botbowl.Game, action: botbowl.Action, parent: Node) -> Node:
+def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode) -> Node:
     """
     :param game: game object used for calculations. Will be reverted to original state.
     :param action: action to be evaluated.
@@ -135,6 +135,7 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: Node) -> N
     :returns - list of tuples containing (Steps, probability) for each possible outcome.
              - probabilities sums to 1.0
     """
+    # noinspection PyProtectedMember
     assert game._is_action_allowed(action)
     assert game.trajectory.enabled
     game.config.fast_mode = False
@@ -147,19 +148,12 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: Node) -> N
 
 def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False) -> Node:
     while len(game.state.available_actions) == 0:
-        proc = game.get_procedure()
-        proc_type = type(proc)
+        proc_type = type(game.get_procedure())
 
-        if proc_type is procedures.Dodge or proc_type is procedures.GFI:
-            if not moving_handled:
-                return expand_moving(game, parent)
-        if proc_type is procedures.Block:
-            return expand_block(game, parent)
-
-        if proc_type is procedures.Armor:
-            return expand_armor(game, parent)
-        if proc_type is procedures.Pickup:
-            return None
+        if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
+            return expand_moving(game, parent)
+        elif proc_type in proc_to_function:
+            return proc_to_function[proc_type](game, parent)
 
         with remove_randomness(game):
             game.step()
@@ -168,7 +162,25 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False) -
     game.revert(parent.step_nbr)
     return action_node
 
+
+def expand_template(game: botbowl.Game, parent: Node) -> Node:
+    pass
+
+
+def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
+    pass
+
+
+def expand_handoff(game: botbowl.Game, parent: Node) -> Node:
+    pass
+
+
+def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
+    pass
+
+
 def expand_moving(game: botbowl.Game, parent: Node) -> Node:
+    # noinspection PyTypeChecker
     active_proc: Union[procedures.GFI, procedures.Dodge] = game.get_procedure()
     assert type(active_proc) is procedures.Dodge or type(active_proc) is procedures.GFI
 
@@ -198,22 +210,23 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 
     new_parent = ChanceNode(game, parent)
 
-    ### SUCCESS SCENARIO ###
+    # SUCCESS SCENARIO
     for _ in range(len(rolls) - index_of_failure):
         botbowl.D6.fix(6)
     success_node = expand_none_action(game, new_parent, moving_handled=True)
     new_parent.connect_child(success_node, probability_success)
 
-    ### FAILURE SCENARIO ###
+    # FAILURE SCENARIO
     botbowl.D6.fix(1)
     fail_node = expand_none_action(game, new_parent, moving_handled=True)
-    new_parent.connect_child(fail_node, 1-probability_success)
+    new_parent.connect_child(fail_node, 1 - probability_success)
 
     game.revert(parent.step_nbr)
     return new_parent
 
 
 def expand_armor(game: botbowl.Game, parent: Node) -> Node:
+    # noinspection PyTypeChecker
     proc: procedures.Armor = game.get_procedure()
     assert not proc.skip_armor
     botbowl.D6.fix(1)
@@ -268,6 +281,21 @@ def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
         _fix_step_connect(d6_fixes=[1, 2], prob=1.0 - p_armorbreak)  # No armorbreak
         _fix_step_connect(d6_fixes=[6, 5, 1, 2], prob=p_armorbreak * (1.0 - p_injury_removal))  # Stunned
         _fix_step_connect(d6_fixes=[6, 5, 4, 5], prob=p_armorbreak * p_injury_removal)  # KO
+
+
+proc_to_function: Dict[Any, Callable[[botbowl.Game, Node], Node]] = \
+        {procedures.Block: expand_block,
+         procedures.Armor: expand_armor,
+         procedures.Pickup: expand_pickup,
+         procedures.Bounce: expand_bounce,
+         procedures.Catch: expand_template,
+         procedures.Intercept: expand_template,
+         procedures.Foul: expand_template,
+         procedures.KickoffTable: expand_template,
+         procedures.PassAttempt: expand_template,
+         procedures.Scatter: expand_template,
+         procedures.ThrowIn: expand_template,
+         procedures.Handoff: expand_handoff}
 
 # if __name__ == "__main__":
 #    pass
