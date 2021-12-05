@@ -1,3 +1,5 @@
+from collections import Counter
+
 from more_itertools import collapse
 
 import botbowl
@@ -25,6 +27,26 @@ def remove_randomness(game: botbowl.Game):
         yield
     finally:
         game.rnd = rnd
+
+
+@contextmanager
+def fixes(d6: Optional[List[int]] = None, d8: Optional[List[int]] = None, BBDie: Optional[List[int]] = None):
+    """Context that fixes dice rolls and removes all fixes when exiting"""
+    if d6 is not None:
+        for roll in d6:
+            botbowl.D6.fix(roll)
+    if d8 is not None:
+        for roll in d8:
+            botbowl.D8.fix(roll)
+    if BBDie is not None:
+        for roll in BBDie:
+            botbowl.BBDie.fix(roll)
+    try:
+        yield
+    finally:
+        assert len(botbowl.D6.FixedRolls) == 0
+        assert len(botbowl.D8.FixedRolls) == 0
+        assert len(botbowl.BBDie.FixedRolls) == 0
 
 
 class ActionSampler:
@@ -146,12 +168,15 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode
     return expand_none_action(game, parent)
 
 
-def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False) -> Node:
+def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, pickup_handled=False) -> Node:
     while len(game.state.available_actions) == 0:
-        proc_type = type(game.get_procedure())
+        proc = game.get_procedure()
+        proc_type = type(proc)
 
         if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
             return expand_moving(game, parent)
+        elif proc_type is procedures.Pickup and not pickup_handled:
+            return expand_pickup(game, parent)
         elif proc_type in proc_to_function:
             return proc_to_function[proc_type](game, parent)
 
@@ -160,23 +185,82 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False) -
 
     action_node = ActionNode(game, parent)
     game.revert(parent.step_nbr)
+    assert parent.step_nbr == game.get_step()
     return action_node
 
 
-def expand_template(game: botbowl.Game, parent: Node) -> Node:
-    pass
+#def expand_template(game: botbowl.Game, parent: Node) -> Node:
+#    raise NotImplementedError()
 
 
 def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
-    pass
+    # noinspection PyTypeChecker
+    active_proc: procedures.Bounce = game.get_procedure()
+    assert type(active_proc) is procedures.Bounce
+
+    new_parent = ChanceNode(game, parent)
+    debug_step_count = game.get_step()
+
+    ball_pos = active_proc.piece.position
+
+    active_player = game.get_active_player()
+    adj_squares = game.get_adjacent_squares(ball_pos, occupied=False)
+    sq_to_num_tz = {sq: game.num_tackle_zones_at(active_player, sq) for sq in adj_squares}
+    num_tz_to_sq = {}
+
+    for sq, num_tz in sq_to_num_tz.items():
+        num_tz_to_sq.setdefault(num_tz, []).append(sq)
+
+    for num_tz, count in Counter(sq_to_num_tz.values()).items():
+        possible_squares = num_tz_to_sq[num_tz]
+        square = np.random.choice(possible_squares, 1)[0]
+        assert type(square) == botbowl.Square
+
+        delta_x = square.x - ball_pos.x
+        delta_y = square.y - ball_pos.y
+
+        roll = botbowl.D8.d8_from_xy[(delta_x, delta_y)]
+        with remove_randomness(game), fixes(d8=[roll]):
+            game.step()
+        new_node = expand_none_action(game, new_parent)
+        new_parent.connect_child(new_node, prob=count/8)
+        assert debug_step_count == game.get_step() == new_parent.step_nbr
+
+    assert debug_step_count == game.get_step() == new_parent.step_nbr
+    return new_parent
 
 
 def expand_handoff(game: botbowl.Game, parent: Node) -> Node:
-    pass
+    raise NotImplementedError()
 
 
 def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
-    pass
+    # noinspection PyTypeChecker
+    active_proc: procedures.Pickup = game.get_procedure()
+    assert type(active_proc) is procedures.Pickup
+    probability_success = game.get_pickup_prob(active_proc.player, active_proc.ball.position)
+
+    new_parent = ChanceNode(game, parent)
+    debug_step_count = game.get_step()
+
+    # SUCCESS SCENARIO
+    with remove_randomness(game), fixes(d6=[6]):
+        game.step()
+    success_node = expand_none_action(game, new_parent, pickup_handled=True)
+    new_parent.connect_child(success_node, probability_success)
+
+    assert debug_step_count == game.get_step() == new_parent.step_nbr
+
+    # FAILURE SCENARIO
+    with remove_randomness(game), fixes(d6=[1]):
+        game.step()
+    fail_node = expand_none_action(game, new_parent, pickup_handled=True)
+    new_parent.connect_child(fail_node, 1 - probability_success)
+
+    game.revert(new_parent.step_nbr) # Todo, should not be needed!
+    assert debug_step_count == game.get_step() == new_parent.step_nbr
+
+    return new_parent
 
 
 def expand_moving(game: botbowl.Game, parent: Node) -> Node:
@@ -206,9 +290,10 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     for _ in range(index_of_failure):
         botbowl.D6.fix(6)
     while len(botbowl.D6.FixedRolls) > 0:
-        game.step(slow_step=True)
+        game.step()
 
     new_parent = ChanceNode(game, parent)
+    debug_step_count = game.get_step()
 
     # SUCCESS SCENARIO
     for _ in range(len(rolls) - index_of_failure):
@@ -216,12 +301,15 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     success_node = expand_none_action(game, new_parent, moving_handled=True)
     new_parent.connect_child(success_node, probability_success)
 
+    assert debug_step_count == game.get_step()
+
     # FAILURE SCENARIO
     botbowl.D6.fix(1)
     fail_node = expand_none_action(game, new_parent, moving_handled=True)
     new_parent.connect_child(fail_node, 1 - probability_success)
 
-    game.revert(parent.step_nbr)
+    assert debug_step_count == game.get_step()
+
     return new_parent
 
 
@@ -253,7 +341,7 @@ def fix_step_connect(game: botbowl.Game,
 
 
 def expand_block(game: botbowl.Game, parent: Node) -> Node:
-    pass
+    raise NotImplementedError()
 
 
 def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
@@ -284,18 +372,18 @@ def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
 
 
 proc_to_function: Dict[Any, Callable[[botbowl.Game, Node], Node]] = \
-        {procedures.Block: expand_block,
-         procedures.Armor: expand_armor,
-         procedures.Pickup: expand_pickup,
-         procedures.Bounce: expand_bounce,
-         procedures.Catch: expand_template,
-         procedures.Intercept: expand_template,
-         procedures.Foul: expand_template,
-         procedures.KickoffTable: expand_template,
-         procedures.PassAttempt: expand_template,
-         procedures.Scatter: expand_template,
-         procedures.ThrowIn: expand_template,
-         procedures.Handoff: expand_handoff}
+    {procedures.Block: expand_block,
+     procedures.Armor: expand_armor,
+     #procedures.Pickup: expand_pickup,
+     procedures.Bounce: expand_bounce,
+     # procedures.Catch: expand_template,
+     # procedures.Intercept: expand_template,
+     # procedures.Foul: expand_template,
+     # procedures.KickoffTable: expand_template,
+     # procedures.PassAttempt: expand_template,
+     # procedures.Scatter: expand_template,
+     # procedures.ThrowIn: expand_template,
+     procedures.Handoff: expand_handoff}
 
 # if __name__ == "__main__":
 #    pass
