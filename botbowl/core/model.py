@@ -12,7 +12,7 @@ from botbowl.core.forward_model import Immutable, Reversible, CallableStep, trea
 
 from abc import ABC, abstractmethod
 from copy import copy, deepcopy
-from typing import List, Optional, Set, Dict
+from typing import List, Optional, Set, Dict, Tuple
 
 import numpy as np
 import uuid
@@ -174,6 +174,46 @@ class Configuration:
         self.time_limits = None
         self.pathfinding_enabled = True
         self.pathfinding_directly_to_adjacent = True
+
+
+@immutable_after_init
+class Square:
+    x: int
+    y: int
+    out_of_bounds: Optional[bool]
+
+    def __init__(self, x: int, y: int, out_of_bounds=None):
+        self.x = x
+        self.y = y
+        self.out_of_bounds = out_of_bounds
+
+    def to_json(self):
+        return {
+            'x': self.x,
+            'y': self.y
+        }
+
+    def __eq__(self, other):
+        if other is None or self is None:
+            return False
+        return self.x == other.x and self.y == other.y
+
+    def __hash__(self):
+        return self.x * 7 + self.y * 13
+
+    def distance(self, other, manhattan=False, flight=False):
+        if manhattan:
+            return abs(other.x - self.x) + abs(other.y - self.y)
+        elif flight:
+            return sqrt((other.x - self.x) ** 2 + (other.y - self.y) ** 2)
+        else:
+            return max(abs(other.x - self.x), abs(other.y - self.y))
+
+    def is_adjacent(self, other, manhattan=False):
+        return self.distance(other, manhattan) == 1
+
+    def __repr__(self):
+        return f"Square({self.x}, {self.y})"
 
 
 class PlayerState(Reversible):
@@ -854,6 +894,24 @@ class D6(Die, Immutable):
 
 class D8(Die, Immutable):
     FixedRolls = []
+    d8_from_xy: Dict[Tuple[int, int], int] = \
+        {(-1, -1): 1,
+         (0, -1): 2,
+         (1, -1): 3,
+         (-1, 0): 4,
+         (1, 0): 5,
+         (-1, 1): 6,
+         (0, 1): 7,
+         (1, 1): 8}
+    xy_from_d8: Dict[int, Tuple[int, int]] = \
+        {1: (-1, -1),
+         2: (0, -1),
+         3: (1, -1),
+         4: (-1, 0),
+         5: (1, 0),
+         6: (-1, 1),
+         7: (0, 1),
+         8: (1, 1)}
 
     @staticmethod
     def fix(value):
@@ -1172,46 +1230,6 @@ class Player(Piece, Reversible):
 
     def __repr__(self):
         return f"Player(position={self.position if self.position is not None else 'None'}, {self.role.name}, state={self.state})"
-
-
-@immutable_after_init
-class Square:
-    x: int
-    y: int
-    out_of_bounds: Optional[bool]
-
-    def __init__(self, x: int, y: int, out_of_bounds=None):
-        self.x = x
-        self.y = y
-        self.out_of_bounds = out_of_bounds
-
-    def to_json(self):
-        return {
-            'x': self.x,
-            'y': self.y
-        }
-
-    def __eq__(self, other):
-        if other is None or self is None:
-            return False
-        return self.x == other.x and self.y == other.y
-
-    def __hash__(self):
-        return self.x * 7 + self.y * 13
-
-    def distance(self, other, manhattan=False, flight=False):
-        if manhattan:
-            return abs(other.x - self.x) + abs(other.y - self.y)
-        elif flight:
-            return sqrt((other.x - self.x) ** 2 + (other.y - self.y) ** 2)
-        else:
-            return max(abs(other.x - self.x), abs(other.y - self.y))
-
-    def is_adjacent(self, other, manhattan=False):
-        return self.distance(other, manhattan) == 1
-
-    def __repr__(self):
-        return f"Square({self.x}, {self.y})"
 
 
 class Race:

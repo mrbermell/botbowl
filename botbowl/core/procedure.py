@@ -615,16 +615,7 @@ class Bounce(Procedure):
         result = roll_scatter.get_sum()
 
         # Bounce
-        x = 0
-        y = 0
-        if result in [1, 4, 6]:
-            x = -1
-        if result in [3, 5, 8]:
-            x = 1
-        if result in [1, 2, 3]:
-            y = -1
-        if result in [6, 7, 8]:
-            y = 1
+        x, y = D8.xy_from_d8[result]
 
         self.game.shove(self.piece, x, y)
         if type(self.piece) is Ball:
