@@ -3,9 +3,10 @@ from collections import Counter
 from more_itertools import collapse
 
 import botbowl
+from botbowl import ActionType, Action
 import botbowl.core.procedure as procedures
 import botbowl.core.forward_model as forward_model
-# from botbowl.core.pathfinding.python_pathfinding import Path
+from botbowl.core.pathfinding.python_pathfinding import Path
 
 import numpy as np
 from typing import Optional, Callable, List, Union, Dict, Any
@@ -49,29 +50,68 @@ def fixes(d6: Optional[List[int]] = None, d8: Optional[List[int]] = None, BBDie:
         assert len(botbowl.BBDie.FixedRolls) == 0
 
 
+def get_priority_move_square(action_choice, game) -> Optional[botbowl.Square]:
+    player = game.get_active_player()
+    ball_pos = game.get_ball().position
+    paths = action_choice.paths
+    priority_square = None
+
+
+    # Score or move towards endzone
+    if player.position == ball_pos:
+        endzone_x = game.get_opp_endzone_x(player.team)
+        endzone_paths = [path for path in paths if path.get_last_step().x == endzone_x]
+        if len(endzone_paths) > 0:
+            path = max(endzone_paths, key=lambda p: p.prob)
+            priority_square = path.get_last_step()
+        else:
+            max_x_path = max(paths, key=lambda p: p.prob * (30 - abs(p.get_last_step().x - endzone_x)))
+            priority_square = max_x_path.get_last_step()
+
+    # Pickup ball
+    elif ball_pos in action_choice.positions:
+        priority_square = ball_pos
+
+    return priority_square
+
+
 class ActionSampler:
     actions: List[NodeAction]
+    priority_actions: List[NodeAction]
 
     def __init__(self, game: botbowl.Game):
         actions = []
+        self.priority_actions = []
+
         for action_choice in game.get_available_actions():
-            if action_choice.action_type not in {botbowl.ActionType.START_MOVE,
-                                                 botbowl.ActionType.MOVE,
-                                                 botbowl.ActionType.END_PLAYER_TURN}:
+            if action_choice.action_type not in {ActionType.START_MOVE,
+                                                 ActionType.MOVE,
+                                                 ActionType.END_PLAYER_TURN}:
                 continue
-            positions = action_choice.positions
-            if len(positions) > 0:
-                for sq in positions:
-                    actions.append(botbowl.Action(action_choice.action_type, position=sq))
+
+            if action_choice.action_type == ActionType.MOVE:
+                prio_move_square = get_priority_move_square(action_choice, game)
+                self.priority_actions.append(Action(action_choice.action_type, position=prio_move_square))
+
+            if len(action_choice.positions) > 0:
+                actions.extend(Action(action_choice.action_type, position=sq) for sq in action_choice.positions)
+            elif len(action_choice.players) > 0:
+                actions.extend(Action(action_choice.action_type, player=p) for p in action_choice.players)
             else:
-                actions.append(botbowl.Action(action_choice.action_type))
+                actions.append(Action(action_choice.action_type))
         if len(actions) > 0:
             self.actions = actions
-        else:
-            self.actions = game.get_available_actions()
+
+        assert len(actions) > 0
+
+#        else:
+#            self.actions = game.get_available_actions()
 
     def get_action(self) -> NodeAction:
-        return np.random.choice(self.actions, 1)[0]
+        if len(self.priority_actions)>0:
+            return self.priority_actions.pop()
+        else:
+            return np.random.choice(self.actions, 1)[0]
 
     def __len__(self):
         return len(self.actions)

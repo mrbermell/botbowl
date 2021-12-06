@@ -2,7 +2,7 @@ import pytest
 from pytest import approx
 
 from tests.util import get_custom_game_turn
-from .TreeSearcher import ActionNode, expand_action, ChanceNode, Node
+from .TreeSearcher import ActionNode, expand_action, ChanceNode, Node, ActionSampler, fixes
 # import botbowl
 from botbowl import Square, Action, ActionType
 
@@ -60,3 +60,16 @@ def test_expand_pickup(data):
     assert type(next_node) is ChanceNode
     assert sum(next_node.child_probability) == 1.0
     assert all(y == approx(x, abs=1e-12) for x, y in zip(sorted(next_node.child_probability), sorted(outcome_probs)))
+
+
+def test_tree_searcher():
+    game, player = get_custom_game_turn(player_positions=[(5, 5)],
+                                        ball_position=(3, 3),
+                                        forward_model_enabled=True,
+                                        pathfinding_enabled=True)
+    with fixes(d6=[6]):
+        for _ in range(3):
+            action = ActionSampler(game).get_action()
+            game.step(action)
+
+    assert game.state.home_team.state.score + game.state.away_team.state.score == 1
