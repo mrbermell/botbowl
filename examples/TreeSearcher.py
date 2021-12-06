@@ -53,17 +53,22 @@ class ActionSampler:
     actions: List[NodeAction]
 
     def __init__(self, game: botbowl.Game):
-
         actions = []
         for action_choice in game.get_available_actions():
+            if action_choice.action_type not in {botbowl.ActionType.START_MOVE,
+                                                 botbowl.ActionType.MOVE,
+                                                 botbowl.ActionType.END_PLAYER_TURN}:
+                continue
             positions = action_choice.positions
             if len(positions) > 0:
                 for sq in positions:
                     actions.append(botbowl.Action(action_choice.action_type, position=sq))
             else:
                 actions.append(botbowl.Action(action_choice.action_type))
-
-        self.actions = actions
+        if len(actions) > 0:
+            self.actions = actions
+        else:
+            self.actions = game.get_available_actions()
 
     def get_action(self) -> NodeAction:
         return np.random.choice(self.actions, 1)[0]
@@ -169,16 +174,33 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode
 
 
 def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, pickup_handled=False) -> Node:
+    """
+    :param game: the game state is changed during expansion but restored to state of argument 'parent'
+    :param parent: shall represent the current state of argument 'game'. game state is restored to parent.step_nbr
+    :param moving_handled:
+    :param pickup_handled:
+    :returns: A subclass of Node:
+                - ChanceNode in a nestled structure with multiple ActionNode as leaf nodes.
+                - ActionNode if only one possible outcome.
+        param game is changed but restored to initial state af
+
+    """
+
+    return_node = None
     while len(game.state.available_actions) == 0:
         proc = game.get_procedure()
         proc_type = type(proc)
 
         if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
-            return expand_moving(game, parent)
+            return_node = expand_moving(game, parent)
         elif proc_type is procedures.Pickup and not pickup_handled:
-            return expand_pickup(game, parent)
+            return_node = expand_pickup(game, parent)
         elif proc_type in proc_to_function:
-            return proc_to_function[proc_type](game, parent)
+            return_node = proc_to_function[proc_type](game, parent)
+
+        if return_node is not None:
+            game.revert(parent.step_nbr)
+            return return_node
 
         with remove_randomness(game):
             game.step()
@@ -257,7 +279,6 @@ def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
     fail_node = expand_none_action(game, new_parent, pickup_handled=True)
     new_parent.connect_child(fail_node, 1 - probability_success)
 
-    game.revert(new_parent.step_nbr) # Todo, should not be needed!
     assert debug_step_count == game.get_step() == new_parent.step_nbr
 
     return new_parent
