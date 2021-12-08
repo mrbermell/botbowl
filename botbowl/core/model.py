@@ -632,6 +632,10 @@ class ActionChoice:
         self.skill = skill
         self.paths = [] if paths is None else paths
 
+    def __repr__(self):
+        return f"ActionChoice({self.action_type}, len(positions)={len(self.positions)}, " \
+               f"len(players)={len(self.players)}, len(paths)={len(self.paths)})"
+
     def to_json(self):
         return {
             'action_type': self.action_type.name,
@@ -665,6 +669,11 @@ class Action:
         self.action_type = action_type
         self.position = position
         self.player = player
+
+    def __repr__(self):
+        pos_str = f", position={self.position}" if self.position is not None else ""
+        player_str = f", player={self.player}" if self.player is not None else ""
+        return f"Action({self.action_type}{pos_str}{player_str})"
 
     def to_json(self):
         return {
@@ -1230,6 +1239,51 @@ class Player(Piece, Reversible):
 
     def __repr__(self):
         return f"Player(position={self.position if self.position is not None else 'None'}, {self.role.name}, state={self.state})"
+
+
+@immutable_after_init
+class Square:
+    x: int
+    y: int
+    _out_of_bounds: Optional[bool]
+
+    def __init__(self, x: int, y: int, _out_of_bounds=None):
+        self.x = x
+        self.y = y
+        self._out_of_bounds = _out_of_bounds
+
+    @property
+    def out_of_bounds(self):
+        assert self._out_of_bounds is not None  # This assertion can be removed when we trust the unit tests more
+        return self._out_of_bounds
+
+    def to_json(self):
+        return {
+            'x': self.x,
+            'y': self.y
+        }
+
+    def __eq__(self, other):
+        if other is None or self is None:
+            return False
+        return self.x == other.x and self.y == other.y
+
+    def __hash__(self):
+        return self.x * 7 + self.y * 13
+
+    def distance(self, other, manhattan=False, flight=False):
+        if manhattan:
+            return abs(other.x - self.x) + abs(other.y - self.y)
+        elif flight:
+            return sqrt((other.x - self.x) ** 2 + (other.y - self.y) ** 2)
+        else:
+            return max(abs(other.x - self.x), abs(other.y - self.y))
+
+    def is_adjacent(self, other, manhattan=False):
+        return self.distance(other, manhattan) == 1
+
+    def __repr__(self):
+        return f"Square({self.x}, {self.y}, out={self._out_of_bounds if self._out_of_bounds is not None else 'None'})"
 
 
 class Race:
