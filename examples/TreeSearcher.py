@@ -1,3 +1,4 @@
+import time
 from collections import Counter
 
 from more_itertools import collapse
@@ -9,7 +10,7 @@ import botbowl.core.forward_model as forward_model
 from botbowl.core.pathfinding.python_pathfinding import Path
 
 import numpy as np
-from typing import Optional, Callable, List, Union, Dict, Any
+from typing import Optional, Callable, List, Union, Dict, Any, Iterable
 from abc import ABC, abstractmethod
 
 from contextlib import contextmanager
@@ -75,6 +76,15 @@ def get_priority_move_square(action_choice, game) -> Optional[botbowl.Square]:
     return priority_square
 
 
+def convert_to_actions(action_choice: botbowl.ActionChoice) -> Iterable[Action]:
+    if len(action_choice.positions) > 0:
+        return (Action(action_choice.action_type, position=sq) for sq in action_choice.positions)
+    elif len(action_choice.players) > 0:
+        return (Action(action_choice.action_type, player=p) for p in action_choice.players)
+    else:
+        return (Action(action_choice.action_type) for _ in range(1))
+
+
 class ActionSampler:
     actions: List[NodeAction]
     priority_actions: List[NodeAction]
@@ -93,22 +103,18 @@ class ActionSampler:
                 prio_move_square = get_priority_move_square(action_choice, game)
                 self.priority_actions.append(Action(action_choice.action_type, position=prio_move_square))
 
-            if len(action_choice.positions) > 0:
-                actions.extend(Action(action_choice.action_type, position=sq) for sq in action_choice.positions)
-            elif len(action_choice.players) > 0:
-                actions.extend(Action(action_choice.action_type, player=p) for p in action_choice.players)
-            else:
-                actions.append(Action(action_choice.action_type))
+            actions.extend(actions.extend(action_choice))
+
         if len(actions) > 0:
             self.actions = actions
+        else:
+            self.actions.extend(collapse(convert_to_actions(action_choice)
+                                         for action_choice in game.get_available_actions()))
 
-        assert len(actions) > 0
-
-#        else:
-#            self.actions = game.get_available_actions()
+        assert len(self.actions) > 0
 
     def get_action(self) -> NodeAction:
-        if len(self.priority_actions)>0:
+        if len(self.priority_actions) > 0:
             return self.priority_actions.pop()
         else:
             return np.random.choice(self.actions, 1)[0]
@@ -173,7 +179,7 @@ class ChanceNode(Node):
 
 class TreeSearcher:
     game: botbowl.Game
-    action_value_func: Callable[[botbowl.Game], ActionSampler]
+    action_value_func: Any  # Callable[[botbowl.Game], ActionSampler]
     root_node: ActionNode
 
     def __init__(self, game, action_value_func):
@@ -184,7 +190,17 @@ class TreeSearcher:
     def set_new_root(self, game: botbowl.Game) -> None:
         pass
 
-    def explore(self, num_node: int = None, max_time: int = None) -> None:
+    def explore(self, max_time: int = None) -> None:
+        """Builds the search tree for 'max_time' seconds."""
+
+        assert self.root_node.step_nbr == self.game.get_step()
+
+        start_time = time.time()
+        while time.time() - start_time < max_time:
+            node = self.get_next_action_node_to_explore()
+
+    def get_next_action_node_to_explore(self):
+        """Return the next  """
         pass
 
     def get_best_action(self) -> botbowl.Action:
@@ -201,6 +217,7 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode
     :param parent: parent node
     :returns - list of tuples containing (Steps, probability) for each possible outcome.
              - probabilities sums to 1.0
+    Not called recursively
     """
     # noinspection PyProtectedMember
     assert game._is_action_allowed(action)
@@ -223,7 +240,7 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
                 - ChanceNode in a nestled structure with multiple ActionNode as leaf nodes.
                 - ActionNode if only one possible outcome.
         param game is changed but restored to initial state af
-
+    Called recursively.
     """
 
     return_node = None

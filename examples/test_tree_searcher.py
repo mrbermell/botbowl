@@ -2,7 +2,7 @@ import pytest
 from pytest import approx
 
 from tests.util import get_custom_game_turn
-from .TreeSearcher import ActionNode, expand_action, ChanceNode, Node, ActionSampler, fixes
+from .TreeSearcher import ActionNode, expand_action, ChanceNode, Node, ActionSampler, fixes, TreeSearcher
 # import botbowl
 from botbowl import Square, Action, ActionType
 
@@ -73,3 +73,14 @@ def test_tree_searcher():
             game.step(action)
 
     assert game.state.home_team.state.score + game.state.away_team.state.score == 1
+
+def test_treeSearcher():
+    game, player = get_custom_game_turn(player_positions=[(5, 5)],
+                                        ball_position=(3, 3),
+                                        forward_model_enabled=True,
+                                        pathfinding_enabled=True)
+    searcher = TreeSearcher(game, None)
+    searcher.explore(max_time=2000)
+
+
+
