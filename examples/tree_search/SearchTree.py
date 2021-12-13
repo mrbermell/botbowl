@@ -1,23 +1,18 @@
 import time
+from abc import ABC, abstractmethod
 from collections import Counter
+from contextlib import contextmanager
+from queue import PriorityQueue
+from typing import Optional, Callable, List, Union, Dict, Any
 
+import numpy as np
 from more_itertools import collapse
 
 import botbowl
-from botbowl import ActionType, Action
-import botbowl.core.procedure as procedures
 import botbowl.core.forward_model as forward_model
-from botbowl.core.pathfinding.python_pathfinding import Path
-
-import numpy as np
-from typing import Optional, Callable, List, Union, Dict, Any, Iterable
-from abc import ABC, abstractmethod
-
-from contextlib import contextmanager
+import botbowl.core.procedure as procedures
 
 accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
-
-NodeAction = botbowl.Action
 
 
 @contextmanager
@@ -51,78 +46,6 @@ def fixes(d6: Optional[List[int]] = None, d8: Optional[List[int]] = None, BBDie:
         assert len(botbowl.BBDie.FixedRolls) == 0
 
 
-def get_priority_move_square(action_choice, game) -> Optional[botbowl.Square]:
-    player = game.get_active_player()
-    ball_pos = game.get_ball().position
-    paths = action_choice.paths
-    priority_square = None
-
-
-    # Score or move towards endzone
-    if player.position == ball_pos:
-        endzone_x = game.get_opp_endzone_x(player.team)
-        endzone_paths = [path for path in paths if path.get_last_step().x == endzone_x]
-        if len(endzone_paths) > 0:
-            path = max(endzone_paths, key=lambda p: p.prob)
-            priority_square = path.get_last_step()
-        else:
-            max_x_path = max(paths, key=lambda p: p.prob * (30 - abs(p.get_last_step().x - endzone_x)))
-            priority_square = max_x_path.get_last_step()
-
-    # Pickup ball
-    elif ball_pos in action_choice.positions:
-        priority_square = ball_pos
-
-    return priority_square
-
-
-def convert_to_actions(action_choice: botbowl.ActionChoice) -> Iterable[Action]:
-    if len(action_choice.positions) > 0:
-        return (Action(action_choice.action_type, position=sq) for sq in action_choice.positions)
-    elif len(action_choice.players) > 0:
-        return (Action(action_choice.action_type, player=p) for p in action_choice.players)
-    else:
-        return (Action(action_choice.action_type) for _ in range(1))
-
-
-class ActionSampler:
-    actions: List[NodeAction]
-    priority_actions: List[NodeAction]
-
-    def __init__(self, game: botbowl.Game):
-        actions = []
-        self.priority_actions = []
-
-        for action_choice in game.get_available_actions():
-            if action_choice.action_type not in {ActionType.START_MOVE,
-                                                 ActionType.MOVE,
-                                                 ActionType.END_PLAYER_TURN}:
-                continue
-
-            if action_choice.action_type == ActionType.MOVE:
-                prio_move_square = get_priority_move_square(action_choice, game)
-                self.priority_actions.append(Action(action_choice.action_type, position=prio_move_square))
-
-            actions.extend(actions.extend(action_choice))
-
-        if len(actions) > 0:
-            self.actions = actions
-        else:
-            self.actions.extend(collapse(convert_to_actions(action_choice)
-                                         for action_choice in game.get_available_actions()))
-
-        assert len(self.actions) > 0
-
-    def get_action(self) -> NodeAction:
-        if len(self.priority_actions) > 0:
-            return self.priority_actions.pop()
-        else:
-            return np.random.choice(self.actions, 1)[0]
-
-    def __len__(self):
-        return len(self.actions)
-
-
 class Node(ABC):
     parent: Optional['Node']
     children: List['Node']
@@ -135,23 +58,18 @@ class Node(ABC):
         self.children = []
         self.change_log = game.trajectory.action_log[self.step_nbr:] if parent is not None else []
 
-    @abstractmethod
-    def get_value(self):
-        pass
-
 
 class ActionNode(Node):
     reward: float
     value: float
-    action_sampler: ActionSampler
+    team: botbowl.Team
+    turn: int
 
     def __init__(self, game: botbowl.Game, parent: Optional[Node], reward=0.0):
         super().__init__(game, parent)
         self.reward = reward
-        self.action_sampler = ActionSampler(game)
-
-    def get_value(self):
-        pass
+        self.team = game.state.available_actions[0].team
+        self.turn = self.team.state.turn
 
 
 class ChanceNode(Node):
@@ -173,40 +91,40 @@ class ChanceNode(Node):
         self.children.append(child)
         self.child_probability.append(prob)
 
-    def get_value(self):
-        pass
 
-
-class TreeSearcher:
+class SearchTree:
     game: botbowl.Game
-    action_value_func: Any  # Callable[[botbowl.Game], ActionSampler]
     root_node: ActionNode
+    all_action_nodes: List[ActionNode]
 
     def __init__(self, game, action_value_func):
         self.game = game
         self.action_value_func = action_value_func
         self.root_node = ActionNode(game, None)
+        self.all_action_nodes = []
 
     def set_new_root(self, game: botbowl.Game) -> None:
-        pass
+        pass  # todo
 
-    def explore(self, max_time: int = None) -> None:
-        """Builds the search tree for 'max_time' seconds."""
-
+    def set_game_to_node(self, target_node: Node) -> None:
+        """Uses forward model to set self.game to the state of Node"""
         assert self.root_node.step_nbr == self.game.get_step()
 
-        start_time = time.time()
-        while time.time() - start_time < max_time:
-            node = self.get_next_action_node_to_explore()
+        step_list = []
+        node = target_node
+        while node is not self.root_node:
+            step_list.append(node.change_log)
+            node = node.parent
 
-    def get_next_action_node_to_explore(self):
-        """Return the next  """
-        pass
+        for steps in reversed(step_list):
+            self.game.forward(steps)
 
-    def get_best_action(self) -> botbowl.Action:
-        pass
+        assert target_node.step_nbr == self.game.get_step()
 
     def connect_next_action_nodes(self, start_node: ActionNode) -> None:
+        pass  # todo
+
+    def expand_action_node(self, node: ActionNode, action: botbowl.Action) -> None:
         pass
 
 
@@ -268,7 +186,7 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
     return action_node
 
 
-#def expand_template(game: botbowl.Game, parent: Node) -> Node:
+# def expand_template(game: botbowl.Game, parent: Node) -> Node:
 #    raise NotImplementedError()
 
 
@@ -302,7 +220,7 @@ def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
         with remove_randomness(game), fixes(d8=[roll]):
             game.step()
         new_node = expand_none_action(game, new_parent)
-        new_parent.connect_child(new_node, prob=count/8)
+        new_parent.connect_child(new_node, prob=count / 8)
         assert debug_step_count == game.get_step() == new_parent.step_nbr
 
     assert debug_step_count == game.get_step() == new_parent.step_nbr
@@ -449,10 +367,30 @@ def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
         _fix_step_connect(d6_fixes=[6, 5, 4, 5], prob=p_armorbreak * p_injury_removal)  # KO
 
 
+def explore(self, max_time: int = None) -> None:
+    """Builds the search tree for 'max_time' seconds."""
+
+    assert self.root_node.step_nbr == self.game.get_step()
+
+    start_time = time.time()
+    while time.time() - start_time < max_time:
+        node = self.get_next_action_node_to_explore()
+        self.set_game_to_node(node)
+        # action = node.action_sampler.get_action()
+
+
+def explore_condition(self, node: ActionNode, prob) -> bool:
+    if self.root_node.team == node.team and self.root_node.turn != node.turn:
+        return False
+    elif prob < 0.05:
+        return False
+    else:
+        return True
+
 proc_to_function: Dict[Any, Callable[[botbowl.Game, Node], Node]] = \
     {procedures.Block: expand_block,
      procedures.Armor: expand_armor,
-     #procedures.Pickup: expand_pickup,
+     # procedures.Pickup: expand_pickup,
      procedures.Bounce: expand_bounce,
      # procedures.Catch: expand_template,
      # procedures.Intercept: expand_template,
