@@ -1,7 +1,7 @@
 import time
 from abc import ABC, abstractmethod
 from collections import Counter
-from contextlib import contextmanager
+from functools import partial
 from queue import PriorityQueue
 from typing import Optional, Callable, List, Union, Dict, Any
 
@@ -11,39 +11,11 @@ from more_itertools import collapse
 import botbowl
 import botbowl.core.forward_model as forward_model
 import botbowl.core.procedure as procedures
+from tests.util import only_fixed_rolls
 
 accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
 
-
-@contextmanager
-def remove_randomness(game: botbowl.Game):
-    """Context that only allows fixed dice rolls, other raises AttributeError"""
-    rnd = game.rnd
-    game.rnd = None
-    try:
-        yield
-    finally:
-        game.rnd = rnd
-
-
-@contextmanager
-def fixes(d6: Optional[List[int]] = None, d8: Optional[List[int]] = None, BBDie: Optional[List[int]] = None):
-    """Context that fixes dice rolls and removes all fixes when exiting"""
-    if d6 is not None:
-        for roll in d6:
-            botbowl.D6.fix(roll)
-    if d8 is not None:
-        for roll in d8:
-            botbowl.D8.fix(roll)
-    if BBDie is not None:
-        for roll in BBDie:
-            botbowl.BBDie.fix(roll)
-    try:
-        yield
-    finally:
-        assert len(botbowl.D6.FixedRolls) == 0
-        assert len(botbowl.D8.FixedRolls) == 0
-        assert len(botbowl.BBDie.FixedRolls) == 0
+remove_randomness = partial(only_fixed_rolls, assert_fixes_consumed=False, assert_no_prev_fixes=False)
 
 
 class Node(ABC):
@@ -58,18 +30,39 @@ class Node(ABC):
         self.children = []
         self.change_log = game.trajectory.action_log[self.step_nbr:] if parent is not None else []
 
+    def _connect_child(self, child_node: 'Node'):
+        assert child_node.parent is self
+        self.children.append(child_node)
+
 
 class ActionNode(Node):
     reward: float
     value: float
     team: botbowl.Team
+    explored_actions: List[botbowl.Action]
     turn: int
+    depth: int
+    info: dict  # Only purpose is to store information for users of SearchTree
 
     def __init__(self, game: botbowl.Game, parent: Optional[Node], reward=0.0):
         super().__init__(game, parent)
         self.reward = reward
         self.team = game.state.available_actions[0].team
+        self.explored_actions = []
         self.turn = self.team.state.turn
+        self.info = {}
+
+        if parent is None:
+            self.depth = 0
+        else:
+            node: ActionNode = parent
+            while type(node) != type(self):
+                node = node.parent
+            self.depth = node.depth + 1
+
+    def connect_child(self, child_node: Node, action: botbowl.Action):
+        super()._connect_child(child_node)
+        self.explored_actions.append(action)
 
 
 class ChanceNode(Node):
@@ -87,8 +80,8 @@ class ChanceNode(Node):
         super().__init__(game, parent)
         self.child_probability = []
 
-    def connect_child(self, child: Node, prob: float):
-        self.children.append(child)
+    def connect_child(self, child_node: Node, prob: float):
+        super()._connect_child(child_node)
         self.child_probability.append(prob)
 
 
@@ -97,18 +90,24 @@ class SearchTree:
     root_node: ActionNode
     all_action_nodes: List[ActionNode]
 
-    def __init__(self, game, action_value_func):
+    def __init__(self, game):
         self.game = game
-        self.action_value_func = action_value_func
         self.root_node = ActionNode(game, None)
-        self.all_action_nodes = []
+        self.all_action_nodes = [self.root_node]
 
     def set_new_root(self, game: botbowl.Game) -> None:
         pass  # todo
 
-    def set_game_to_node(self, target_node: Node) -> None:
+    def set_game_to_node(self, target_node: ActionNode) -> None:
         """Uses forward model to set self.game to the state of Node"""
+
+        if target_node is self.root_node:
+            self.game.revert(target_node.step_nbr)
+            return
+
+        # todo: should be able to handle game being in any if all_action_nodes
         assert self.root_node.step_nbr == self.game.get_step()
+        assert target_node in self.all_action_nodes
 
         step_list = []
         node = target_node
@@ -121,11 +120,23 @@ class SearchTree:
 
         assert target_node.step_nbr == self.game.get_step()
 
-    def connect_next_action_nodes(self, start_node: ActionNode) -> None:
-        pass  # todo
-
     def expand_action_node(self, node: ActionNode, action: botbowl.Action) -> None:
-        pass
+        assert action not in node.explored_actions
+        assert node in self.all_action_nodes
+        self.set_game_to_node(node)
+        new_node = expand_action(self.game, action, node)
+        node.connect_child(new_node, action)
+        self.set_game_to_node(self.root_node)
+
+        # find all newly added action nodes
+        self._look_for_action_nodes(new_node)
+
+    def _look_for_action_nodes(self, node: Node):
+        if isinstance(node, ActionNode):
+            assert node not in self.all_action_nodes
+            self.all_action_nodes.append(node)
+        for child_node in node.children:
+            self._look_for_action_nodes(child_node)
 
 
 def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode) -> Node:
@@ -217,7 +228,7 @@ def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
         delta_y = square.y - ball_pos.y
 
         roll = botbowl.D8.d8_from_xy[(delta_x, delta_y)]
-        with remove_randomness(game), fixes(d8=[roll]):
+        with only_fixed_rolls(game, d8=[roll]):
             game.step()
         new_node = expand_none_action(game, new_parent)
         new_parent.connect_child(new_node, prob=count / 8)
@@ -241,7 +252,7 @@ def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
     debug_step_count = game.get_step()
 
     # SUCCESS SCENARIO
-    with remove_randomness(game), fixes(d6=[6]):
+    with only_fixed_rolls(game, d6=[6]):
         game.step()
     success_node = expand_none_action(game, new_parent, pickup_handled=True)
     new_parent.connect_child(success_node, probability_success)
@@ -249,7 +260,7 @@ def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
     assert debug_step_count == game.get_step() == new_parent.step_nbr
 
     # FAILURE SCENARIO
-    with remove_randomness(game), fixes(d6=[1]):
+    with only_fixed_rolls(game, d6=[1]):
         game.step()
     fail_node = expand_none_action(game, new_parent, pickup_handled=True)
     new_parent.connect_child(fail_node, 1 - probability_success)
@@ -367,6 +378,7 @@ def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
         _fix_step_connect(d6_fixes=[6, 5, 4, 5], prob=p_armorbreak * p_injury_removal)  # KO
 
 
+# move to other file
 def explore(self, max_time: int = None) -> None:
     """Builds the search tree for 'max_time' seconds."""
 
@@ -379,6 +391,7 @@ def explore(self, max_time: int = None) -> None:
         # action = node.action_sampler.get_action()
 
 
+# move to other file
 def explore_condition(self, node: ActionNode, prob) -> bool:
     if self.root_node.team == node.team and self.root_node.turn != node.turn:
         return False
@@ -386,6 +399,7 @@ def explore_condition(self, node: ActionNode, prob) -> bool:
         return False
     else:
         return True
+
 
 proc_to_function: Dict[Any, Callable[[botbowl.Game, Node], Node]] = \
     {procedures.Block: expand_block,
@@ -400,6 +414,3 @@ proc_to_function: Dict[Any, Callable[[botbowl.Game, Node], Node]] = \
      # procedures.Scatter: expand_template,
      # procedures.ThrowIn: expand_template,
      procedures.Handoff: expand_handoff}
-
-# if __name__ == "__main__":
-#    pass

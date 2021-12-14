@@ -79,7 +79,7 @@ class ActionSampler:
                 prio_move_square = get_priority_move_square(action_choice, game)
                 self.priority_actions.append(Action(action_choice.action_type, position=prio_move_square))
 
-            actions.extend(actions.extend(action_choice))
+            actions.extend(convert_to_actions(action_choice))
 
         if len(actions) > 0:
             self.actions = actions
