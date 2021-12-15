@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from random import shuffle
 from typing import Optional, List, Iterable, Tuple
 
 import numpy as np
@@ -88,12 +89,15 @@ class ActionSampler:
                                          for action_choice in game.get_available_actions()))
 
         assert len(self.actions) > 0
+        shuffle(self.actions)
 
-    def get_action(self) -> NodeAction:
+    def get_action(self) -> Optional[Action]:
         if len(self.priority_actions) > 0:
             return self.priority_actions.pop()
+        elif len(self.actions):
+            return self.actions.pop()
         else:
-            return np.random.choice(self.actions, 1)[0]
+            return None
 
     def __len__(self):
         return len(self.actions)

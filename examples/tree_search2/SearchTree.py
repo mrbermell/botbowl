@@ -2,8 +2,9 @@ import time
 from abc import ABC, abstractmethod
 from collections import Counter
 from functools import partial
+from operator import attrgetter
 from queue import PriorityQueue
-from typing import Optional, Callable, List, Union, Dict, Any
+from typing import Optional, Callable, List, Union, Dict, Any, Iterable
 
 import numpy as np
 from more_itertools import collapse
@@ -64,6 +65,16 @@ class ActionNode(Node):
         super()._connect_child(child_node)
         self.explored_actions.append(action)
 
+    def get_all_parents(self, include_self) -> Iterable['ActionNode']:
+        if include_self:
+            yield self
+
+        node = self.parent
+        while node is not None:
+            yield node
+            node = node.parent
+        return
+
 
 class ChanceNode(Node):
     """
@@ -89,40 +100,42 @@ class SearchTree:
     game: botbowl.Game
     root_node: ActionNode
     all_action_nodes: List[ActionNode]
+    current_node: ActionNode
 
     def __init__(self, game):
         self.game = game
         self.root_node = ActionNode(game, None)
         self.all_action_nodes = [self.root_node]
+        self.current_node = self.root_node
 
     def set_new_root(self, game: botbowl.Game) -> None:
         pass  # todo
 
     def set_game_to_node(self, target_node: ActionNode) -> None:
         """Uses forward model to set self.game to the state of Node"""
+        assert self.current_node.step_nbr == self.game.get_step(), "gamestate and SearchTree are not synced, big fault!"
+        assert target_node in self.all_action_nodes, "target node is not in SearchTree, major fault"
 
-        if target_node is self.root_node:
-            self.game.revert(target_node.step_nbr)
+        if target_node is self.current_node:
             return
 
-        # todo: should be able to handle game being in any if all_action_nodes
+        # Always revert to root node to begin with. Could be improved...
+        self.game.revert(self.root_node.step_nbr)
+        self.current_node = self.root_node
         assert self.root_node.step_nbr == self.game.get_step()
-        assert target_node in self.all_action_nodes
 
-        step_list = []
-        node = target_node
-        while node is not self.root_node:
-            step_list.append(node.change_log)
-            node = node.parent
+        if target_node is self.root_node:
+            return
 
-        for steps in reversed(step_list):
+        for steps in reversed(list(map(attrgetter('change_log'), target_node.get_all_parents(include_self=True)))):
             self.game.forward(steps)
+        self.current_node = self.root_node
 
-        assert target_node.step_nbr == self.game.get_step()
+        assert target_node.step_nbr == self.game.get_step(), f"{target_node.step_nbr} != {self.game.get_step()}"
 
     def expand_action_node(self, node: ActionNode, action: botbowl.Action) -> None:
-        assert action not in node.explored_actions
-        assert node in self.all_action_nodes
+        assert action not in node.explored_actions, f"{action} has already been explored in this node"
+        assert node in self.all_action_nodes, f"{node} is not in all_action_nodes"
         self.set_game_to_node(node)
         new_node = expand_action(self.game, action, node)
         node.connect_child(new_node, action)

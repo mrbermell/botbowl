@@ -90,11 +90,21 @@ def test_treeSearcher():
                                    forward_model_enabled=True,
                                    pathfinding_enabled=True)
     tree = SearchTree(game)
-    tree.root_node.info['action_sampler'] = ActionSampler(game)
 
     for _ in range(20):
-        possible_nodes = [node for node in tree.all_action_nodes if node.depth<3]
-        node_to_explore = possible_nodes[randint(0, len(possible_nodes))]
+        possible_nodes = []
+        for node in tree.all_action_nodes:
+            if node.depth < 3:
+                if 'action_sampler' not in node.info:
+                    possible_nodes.append(node)
+                elif len(node.info['action_sampler'])>0:
+                    possible_nodes.append(node)
 
-        action = ActionSampler(game).get_action()
-        tree.expand_action_node( tree.root_node, action)
+        node_to_explore = possible_nodes[randint(0, len(possible_nodes)-1)]
+        if 'action_sampler' not in node_to_explore.info:
+            tree.set_game_to_node(node_to_explore)
+            node_to_explore.info['action_sampler'] = ActionSampler(tree.game)
+
+        action = node_to_explore.info['action_sampler'].get_action()
+        assert action is not None
+        tree.expand_action_node(node_to_explore, action)
