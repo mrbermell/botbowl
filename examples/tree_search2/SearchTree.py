@@ -29,7 +29,8 @@ class Node(ABC):
         self.step_nbr = game.get_step()
         self.parent = parent
         self.children = []
-        self.change_log = game.trajectory.action_log[self.step_nbr:] if parent is not None else []
+        self.change_log = game.trajectory.action_log[parent.step_nbr:] if parent is not None else []
+        assert parent is None or len(self.change_log) > 0
 
     def _connect_child(self, child_node: 'Node'):
         assert child_node.parent is self
@@ -113,7 +114,9 @@ class SearchTree:
 
     def set_game_to_node(self, target_node: ActionNode) -> None:
         """Uses forward model to set self.game to the state of Node"""
-        assert self.current_node.step_nbr == self.game.get_step(), "gamestate and SearchTree are not synced, big fault!"
+        assert self.current_node.step_nbr == self.game.get_step(), \
+            f"gamestate {self.game.get_step()} and SearchTree {self.current_node.step_nbr} are not synced, big fault!"
+
         assert target_node in self.all_action_nodes, "target node is not in SearchTree, major fault"
 
         if target_node is self.current_node:
@@ -129,7 +132,7 @@ class SearchTree:
 
         for steps in reversed(list(map(attrgetter('change_log'), target_node.get_all_parents(include_self=True)))):
             self.game.forward(steps)
-        self.current_node = self.root_node
+        self.current_node = target_node
 
         assert target_node.step_nbr == self.game.get_step(), f"{target_node.step_nbr} != {self.game.get_step()}"
 

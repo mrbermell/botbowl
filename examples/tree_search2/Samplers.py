@@ -67,7 +67,7 @@ class ActionSampler:
     priority_actions: List[NodeAction]
 
     def __init__(self, game: botbowl.Game):
-        actions = []
+        self.actions = []
         self.priority_actions = []
 
         for action_choice in game.get_available_actions():
@@ -78,13 +78,13 @@ class ActionSampler:
 
             if action_choice.action_type == ActionType.MOVE:
                 prio_move_square = get_priority_move_square(action_choice, game)
-                self.priority_actions.append(Action(action_choice.action_type, position=prio_move_square))
 
-            actions.extend(convert_to_actions(action_choice))
+                if prio_move_square is not None:
+                    self.priority_actions.append(Action(action_choice.action_type, position=prio_move_square))
 
-        if len(actions) > 0:
-            self.actions = actions
-        else:
+            self.actions.extend(convert_to_actions(action_choice))
+
+        if len(self.actions) == 0:
             self.actions.extend(collapse(convert_to_actions(action_choice)
                                          for action_choice in game.get_available_actions()))
 

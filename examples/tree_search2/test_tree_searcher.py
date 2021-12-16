@@ -86,18 +86,19 @@ def test_tree_searcher():
 
 def test_treeSearcher():
     game, _ = get_custom_game_turn(player_positions=[(5, 5)],
+                                   opp_player_positions=[(6, 6)],
                                    ball_position=(3, 3),
                                    forward_model_enabled=True,
                                    pathfinding_enabled=True)
     tree = SearchTree(game)
 
-    for _ in range(20):
+    for _ in range(100):
         possible_nodes = []
         for node in tree.all_action_nodes:
             if node.depth < 3:
                 if 'action_sampler' not in node.info:
                     possible_nodes.append(node)
-                elif len(node.info['action_sampler'])>0:
+                elif len(node.info['action_sampler']) > 0:
                     possible_nodes.append(node)
 
         node_to_explore = possible_nodes[randint(0, len(possible_nodes)-1)]
