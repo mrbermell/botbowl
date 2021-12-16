@@ -1,13 +1,13 @@
 import time
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections import Counter
 from functools import partial
 from operator import attrgetter
-from queue import PriorityQueue
 from typing import Optional, Callable, List, Union, Dict, Any, Iterable
 
 import numpy as np
 from more_itertools import collapse
+from pytest import approx
 
 import botbowl
 import botbowl.core.forward_model as forward_model
@@ -24,17 +24,23 @@ class Node(ABC):
     children: List['Node']
     change_log: List[forward_model.Step]
     step_nbr: int  # forward model's step count
+    top_proc: str
 
     def __init__(self, game: botbowl.Game, parent: Optional['Node']):
         self.step_nbr = game.get_step()
         self.parent = parent
         self.children = []
         self.change_log = game.trajectory.action_log[parent.step_nbr:] if parent is not None else []
+        self.top_proc = str(game.get_procedure())
         assert parent is None or len(self.change_log) > 0
 
     def _connect_child(self, child_node: 'Node'):
         assert child_node.parent is self
         self.children.append(child_node)
+
+    def __repr__(self):
+        self_type = str(type(self)).split(".")[-1]
+        return f"{self_type}({self.step_nbr=}, {self.top_proc}"
 
 
 class ActionNode(Node):
@@ -66,7 +72,7 @@ class ActionNode(Node):
         super()._connect_child(child_node)
         self.explored_actions.append(action)
 
-    def get_all_parents(self, include_self) -> Iterable['ActionNode']:
+    def get_all_parents(self, include_self) -> Iterable[Node]:
         if include_self:
             yield self
 
@@ -223,7 +229,6 @@ def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
     assert type(active_proc) is procedures.Bounce
 
     new_parent = ChanceNode(game, parent)
-    debug_step_count = game.get_step()
 
     ball_pos = active_proc.piece.position
 
@@ -248,9 +253,13 @@ def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
             game.step()
         new_node = expand_none_action(game, new_parent)
         new_parent.connect_child(new_node, prob=count / 8)
-        assert debug_step_count == game.get_step() == new_parent.step_nbr
+        assert game.get_step() == new_parent.step_nbr
 
-    assert debug_step_count == game.get_step() == new_parent.step_nbr
+    sum_prob = sum(new_parent.child_probability)
+    new_parent.child_probability = [prob/sum_prob for prob in new_parent.child_probability]
+
+    assert sum(new_parent.child_probability) == approx(1.0, abs=1e-9)
+    assert game.get_step() == new_parent.step_nbr
     return new_parent
 
 

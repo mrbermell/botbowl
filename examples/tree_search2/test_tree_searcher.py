@@ -3,12 +3,13 @@ from random import randint
 import pytest
 from pytest import approx
 
+from examples.tree_search2.Searchers import gotebot_heuristic, get_best_action
 from tests.util import get_custom_game_turn, only_fixed_rolls
 from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree
 from examples.tree_search2.Samplers import ActionSampler
 # import botbowl
 from botbowl import Square, Action, ActionType
-import numpy as np
+# import numpy as np
 
 
 @pytest.mark.parametrize("data", [(Square(2, 2), [1.0]),
@@ -84,7 +85,7 @@ def test_tree_searcher():
     assert game.state.home_team.state.score + game.state.away_team.state.score == 1
 
 
-def test_treeSearcher():
+def test_tree_searcher2():
     game, _ = get_custom_game_turn(player_positions=[(5, 5)],
                                    opp_player_positions=[(6, 6)],
                                    ball_position=(3, 3),
@@ -109,3 +110,12 @@ def test_treeSearcher():
         action = node_to_explore.info['action_sampler'].get_action()
         assert action is not None
         tree.expand_action_node(node_to_explore, action)
+
+    for node in tree.all_action_nodes:
+        if 'value' not in node.info:
+            tree.set_game_to_node(node)
+            node.info['value'] = gotebot_heuristic(tree.game)
+
+    tree.set_game_to_node(tree.root_node)
+    best_action, value = get_best_action(tree.root_node)
+    print(f"{best_action} with {value=}")
