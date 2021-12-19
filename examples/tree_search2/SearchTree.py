@@ -317,11 +317,13 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         final_step = active_proc.position
 
     path = move_action_proc.paths[final_step]
-    probability_success = path.prob  # TODO: pickup should not be considered by this probability.
+    probability_success = path.prob
     rolls = list(collapse(path.rolls))
 
     if game.get_ball().position == final_step:
+        # remove the pickup roll and probability
         rolls.pop()
+        probability_success /= game.get_pickup_prob(active_proc.player, final_step)
 
     p = np.array(rolls) / sum(rolls)
     index_of_failure = np.random.choice(range(len(rolls)), 1, p=p)[0]

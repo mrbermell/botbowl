@@ -3,7 +3,7 @@ from random import randint
 import pytest
 from pytest import approx
 
-from examples.tree_search2.Searchers import gotebot_heuristic, get_best_action
+from examples.tree_search2.Searchers import gotebot_heuristic, get_best_action, get_heuristic
 from tests.util import get_custom_game_turn, only_fixed_rolls
 from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree
 from examples.tree_search2.Samplers import ActionSampler
@@ -85,7 +85,7 @@ def test_tree_searcher():
     assert game.state.home_team.state.score + game.state.away_team.state.score == 1
 
 
-def test_tree_searcher2():
+def test_dodge_pickup_score():
     game, _ = get_custom_game_turn(player_positions=[(5, 5)],
                                    opp_player_positions=[(6, 6)],
                                    ball_position=(3, 3),
@@ -95,7 +95,7 @@ def test_tree_searcher2():
     def on_every_action_node(search_tree: SearchTree, node):
         search_tree.set_game_to_node(node)
         node.info['action_sampler'] = ActionSampler(search_tree.game)
-        node.info['value'] = gotebot_heuristic(search_tree.game)
+        node.info['value'] = get_heuristic(search_tree.game, coeff_score=1.0)
 
     tree = SearchTree(game, on_every_action_node)
 
@@ -112,4 +112,4 @@ def test_tree_searcher2():
 
     tree.set_game_to_node(tree.root_node)
     best_action, value = get_best_action(tree.root_node)
-    print(f"{best_action} with {value=}")
+    assert value == approx((4/6)**2)  # corresponding to 3+, 3+ w/o rerolls
