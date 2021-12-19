@@ -108,12 +108,17 @@ class SearchTree:
     root_node: ActionNode
     all_action_nodes: List[ActionNode]
     current_node: ActionNode
+    on_every_action_node: Callable[['SearchTree', ActionNode], None]
 
-    def __init__(self, game):
+    def __init__(self, game, on_every_action_node=None):
         self.game = game
         self.root_node = ActionNode(game, None)
         self.all_action_nodes = [self.root_node]
         self.current_node = self.root_node
+        self.on_every_action_node = on_every_action_node
+
+        if self.on_every_action_node is not None:
+            self.on_every_action_node(self, self.root_node)
 
     def set_new_root(self, game: botbowl.Game) -> None:
         pass  # todo
@@ -157,6 +162,9 @@ class SearchTree:
         if isinstance(node, ActionNode):
             assert node not in self.all_action_nodes
             self.all_action_nodes.append(node)
+            if self.on_every_action_node is not None:
+                self.on_every_action_node(self, node)
+
         for child_node in node.children:
             self._look_for_action_nodes(child_node)
 
