@@ -5,10 +5,12 @@ from pytest import approx
 
 from examples.tree_search2.Searchers import gotebot_heuristic, get_best_action, get_heuristic
 from tests.util import get_custom_game_turn, only_fixed_rolls
-from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree
+from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree, get_block_probs
 from examples.tree_search2.Samplers import ActionSampler
-# import botbowl
+import botbowl
 from botbowl import Square, Action, ActionType
+
+
 # import numpy as np
 
 
@@ -113,3 +115,33 @@ def test_dodge_pickup_score():
     tree.set_game_to_node(tree.root_node)
     best_action, value = get_best_action(tree.root_node)
     assert value == approx((4/6)**2)  # corresponding to 3+, 3+ w/o rerolls
+
+
+def test_block_probs_2d():
+    game, (attacker, assist, defender) = get_custom_game_turn(player_positions=[(5, 5), (7, 7)],
+                                                              opp_player_positions=[(6, 6)])
+    def_down, none_down, all_down, att_down = get_block_probs(game, attacker, defender)
+
+    assert def_down == approx(1-(4/6)**2)
+    assert none_down == approx(12/36)
+    assert all_down + att_down == approx(1/9)
+
+
+def test_block_probs_2d_with_block():
+    game, (attacker, assist, defender) = get_custom_game_turn(player_positions=[(5, 5), (7, 7)],
+                                                              opp_player_positions=[(6, 6)])
+    attacker.extra_skills.append(botbowl.Skill.BLOCK)
+    def_down, none_down, all_down, att_down = get_block_probs(game, attacker, defender)
+
+    assert def_down == approx(0.75)
+    assert all_down + att_down == approx(1/36)
+
+
+def test_block_prob_2d_uphill_with_block():
+    game, (attacker, _, defender) = get_custom_game_turn(player_positions=[(5, 5)],
+                                                         opp_player_positions=[(6, 6), (4, 4)])
+    attacker.extra_skills.append(botbowl.Skill.BLOCK)
+    def_down, none_down, all_down, att_down = get_block_probs(game, attacker, defender)
+
+    assert def_down == approx(0.25)
+    assert att_down == approx(11/36)

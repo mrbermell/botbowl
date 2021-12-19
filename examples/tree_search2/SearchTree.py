@@ -3,13 +3,14 @@ from abc import ABC
 from collections import Counter
 from functools import partial
 from operator import attrgetter
-from typing import Optional, Callable, List, Union, Dict, Any, Iterable
+from typing import Optional, Callable, List, Union, Dict, Any, Iterable, Tuple
 
 import numpy as np
 from more_itertools import collapse
 from pytest import approx
 
 import botbowl
+from botbowl import Skill
 import botbowl.core.forward_model as forward_model
 import botbowl.core.procedure as procedures
 from tests.util import only_fixed_rolls
@@ -382,7 +383,72 @@ def fix_step_connect(game: botbowl.Game,
     assert len(botbowl.D6.FixedRolls) == 0
 
 
+def get_block_probs(game: botbowl.Game, attacker: botbowl.Player, defender: botbowl.Player) -> Tuple[float, float, float, float]:
+    dice = game.num_block_dice(attacker, defender)
+    push_squares: List[botbowl.Square] = game.get_push_squares(attacker.position, defender.position)
+    crowd_push = push_squares[0].out_of_bounds  # and not defender.has_skill(Skill.STAND_FIRM)
+    who_has_block = (attacker.has_skill(Skill.BLOCK), defender.has_skill(Skill.BLOCK))
+
+    # initialize as 1d block without skills
+    dice_outcomes = np.array([2, 2, 1, 1], dtype=int)
+    def_down = 0
+    none_down = 1
+    all_down = 2
+    att_down = 3
+
+    if any(who_has_block):
+        dice_outcomes[all_down] = 0
+
+        if who_has_block == (True, True):  # both
+            dice_outcomes[none_down] += 1
+        elif who_has_block == (True, False):  # only attacker
+            dice_outcomes[def_down] += 1
+        elif who_has_block == (False, True):  # only defender
+            dice_outcomes[att_down] += 1
+
+    if crowd_push:
+        dice_outcomes[def_down] += 2
+        dice_outcomes[none_down] -= 2
+    elif defender.has_skill(Skill.DODGE):  # and not attacker.has_skill(Skill.TACKLE):
+        dice_outcomes[def_down] -= 1
+        dice_outcomes[none_down] += 2
+
+    prob = np.zeros(4)
+    probability_left = 1.0
+    available_dice = 6
+
+    if dice > 0:
+        order = [def_down, none_down, all_down, att_down]
+    else:
+        order = [att_down, all_down, none_down, def_down]
+        dice = -dice  # make positive
+
+    for i in order:
+        prob[i] = probability_left * (1 - (1 - dice_outcomes[i] / available_dice) ** dice)
+        available_dice -= dice_outcomes[i]
+        probability_left -= prob[i]
+
+    assert available_dice == 0
+    assert probability_left == approx(0)
+    assert prob.sum() == approx(1.0)
+
+    return tuple(prob)
+
+
 def expand_block(game: botbowl.Game, parent: Node) -> Node:
+
+    proc: botbowl.Block = game.get_procedure()
+    assert type(proc) is botbowl.Block
+
+    attacker: botbowl.Player = proc.attacker
+    defender: botbowl.Player = proc.defender
+
+    attacker_down_p, defender_down_p, _, _ = game.get_block_probs(attacker, defender)
+
+    both_down_possible = not (attacker.has_skill(botbowl.Skill.BLOCK) and defender.has_skill(botbowl.Skill.BLOCK))
+
+
+
     raise NotImplementedError()
 
 
@@ -411,29 +477,6 @@ def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
         _fix_step_connect(d6_fixes=[1, 2], prob=1.0 - p_armorbreak)  # No armorbreak
         _fix_step_connect(d6_fixes=[6, 5, 1, 2], prob=p_armorbreak * (1.0 - p_injury_removal))  # Stunned
         _fix_step_connect(d6_fixes=[6, 5, 4, 5], prob=p_armorbreak * p_injury_removal)  # KO
-
-
-# move to other file
-def explore(self, max_time: int = None) -> None:
-    """Builds the search tree for 'max_time' seconds."""
-
-    assert self.root_node.step_nbr == self.game.get_step()
-
-    start_time = time.time()
-    while time.time() - start_time < max_time:
-        node = self.get_next_action_node_to_explore()
-        self.set_game_to_node(node)
-        # action = node.action_sampler.get_action()
-
-
-# move to other file
-def explore_condition(self, node: ActionNode, prob) -> bool:
-    if self.root_node.team == node.team and self.root_node.turn != node.turn:
-        return False
-    elif prob < 0.05:
-        return False
-    else:
-        return True
 
 
 proc_to_function: Dict[Any, Callable[[botbowl.Game, Node], Node]] = \
