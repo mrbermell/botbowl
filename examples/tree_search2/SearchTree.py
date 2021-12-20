@@ -10,7 +10,7 @@ from more_itertools import collapse
 from pytest import approx
 
 import botbowl
-from botbowl import Skill
+from botbowl import Skill, BBDieResult
 import botbowl.core.forward_model as forward_model
 import botbowl.core.procedure as procedures
 from tests.util import only_fixed_rolls
@@ -454,15 +454,50 @@ def expand_block(game: botbowl.Game, parent: Node) -> Node:
 
     new_parent = ChanceNode(game, parent)
 
+    # -- Prepare -- #
+    defender_dodge = defender.has_skill(Skill.DODGE)
+    defender_block = defender.has_skill(Skill.BLOCK)
+    attacker_block = attacker.has_skill(Skill.BLOCK)
+
     # -- Defender down -- #
-    with only_fixed_rolls(game, block_dice=[botbowl.BBDieResult.DEFENDER_DOWN]*num_dice):
-        game.step()  # block proc
+    def_down_die_results = [BBDieResult.DEFENDER_DOWN]
+    if not defender_dodge:
+        def_down_die_results.append(BBDieResult.DEFENDER_STUMBLES)
+    if (not defender_block) and attacker_block:
+        def_down_die_results.append(BBDieResult.BOTH_DOWN)
 
-    def_down_node = expand_none_action(game, new_parent)
-    new_parent.connect_child(def_down_node, p_def_down)
-    assert game.get_step() == new_parent.step_nbr
+    fix_step_connect2(game, new_parent, p_def_down,
+                      block_dice=np.random.choice(def_down_die_results, num_dice))
 
+    # -- None down -- #
+    none_down_die_results = [BBDieResult.PUSH]
+    if defender_dodge:
+        none_down_die_results.append(BBDieResult.DEFENDER_STUMBLES)
+    if attacker_block and defender_block:
+        none_down_die_results.append(BBDieResult.BOTH_DOWN)
+
+    fix_step_connect2(game, new_parent, p_none_down,
+                      block_dice=np.random.choice(none_down_die_results, num_dice))
+
+
+    # -- Attacker or all down -- ##
+    att_down_die_results = [BBDieResult.ATTACKER_DOWN]
+    if not attacker_block:
+        att_down_die_results.append(BBDieResult.BOTH_DOWN)
+
+    fix_step_connect2(game, new_parent, p_all_down + p_att_down,
+                      block_dice=np.random.choice(att_down_die_results, num_dice))
+
+
+    assert sum(new_parent.child_probability) == approx(1.0)
     return new_parent
+
+
+def fix_step_connect2(game, parent, probability, **fixes):
+    with only_fixed_rolls(game, **fixes):
+        game.step()
+    new_node = expand_none_action(game, parent)
+    parent.connect_child(new_node, probability)
 
 
 def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
