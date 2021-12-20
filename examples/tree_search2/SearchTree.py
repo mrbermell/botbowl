@@ -438,8 +438,12 @@ def expand_block(game: botbowl.Game, parent: Node) -> Node:
 
     proc: botbowl.Block = game.get_procedure()
     assert type(proc) is botbowl.Block
-
     assert not proc.gfi, "Can't handle GFI:s here =( "
+
+    # this is an ugly solution. The procedure checking the re-roll.
+    if proc.roll is not None:
+        game.step()
+        return expand_none_action(game, parent)
 
     attacker: botbowl.Player = proc.attacker
     defender: botbowl.Player = proc.defender
@@ -448,17 +452,18 @@ def expand_block(game: botbowl.Game, parent: Node) -> Node:
 
     p_def_down, p_none_down, p_all_down, p_att_down = get_block_probs(game, attacker, defender)
 
-
-
     new_parent = ChanceNode(game, parent)
 
     # -- Defender down -- #
     with only_fixed_rolls(game, block_dice=[botbowl.BBDieResult.DEFENDER_DOWN]*num_dice):
-        game.step()
+        game.step()  # block proc
 
     def_down_node = expand_none_action(game, new_parent)
     new_parent.connect_child(def_down_node, p_def_down)
     assert game.get_step() == new_parent.step_nbr
+
+    return new_parent
+
 
 def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
     """
