@@ -145,3 +145,18 @@ def test_block_prob_2d_uphill_with_block():
 
     assert def_down == approx(0.25)
     assert att_down == approx(11/36)
+
+
+def test_expand_block():
+    game, (attacker, _, defender) = get_custom_game_turn(player_positions=[(5, 5), (7, 7)],
+                                                         opp_player_positions=[(6, 6)],
+                                                         forward_model_enabled=True)
+
+    tree = SearchTree(game)
+
+    tree.expand_action_node(tree.root_node, Action(ActionType.START_BLOCK, player=attacker))
+
+    assert len(tree.all_action_nodes) == 2
+    next_node = tree.all_action_nodes[1]
+
+    tree.expand_action_node(next_node, Action(ActionType.BLOCK, position=defender.position))

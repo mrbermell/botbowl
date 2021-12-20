@@ -283,7 +283,6 @@ def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
     probability_success = game.get_pickup_prob(active_proc.player, active_proc.ball.position)
 
     new_parent = ChanceNode(game, parent)
-    debug_step_count = game.get_step()
 
     # SUCCESS SCENARIO
     with only_fixed_rolls(game, d6=[6]):
@@ -291,7 +290,7 @@ def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
     success_node = expand_none_action(game, new_parent, pickup_handled=True)
     new_parent.connect_child(success_node, probability_success)
 
-    assert debug_step_count == game.get_step() == new_parent.step_nbr
+    assert game.get_step() == new_parent.step_nbr
 
     # FAILURE SCENARIO
     with only_fixed_rolls(game, d6=[1]):
@@ -299,7 +298,7 @@ def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
     fail_node = expand_none_action(game, new_parent, pickup_handled=True)
     new_parent.connect_child(fail_node, 1 - probability_success)
 
-    assert debug_step_count == game.get_step() == new_parent.step_nbr
+    assert game.get_step() == new_parent.step_nbr
 
     return new_parent
 
@@ -440,17 +439,26 @@ def expand_block(game: botbowl.Game, parent: Node) -> Node:
     proc: botbowl.Block = game.get_procedure()
     assert type(proc) is botbowl.Block
 
+    assert not proc.gfi, "Can't handle GFI:s here =( "
+
     attacker: botbowl.Player = proc.attacker
     defender: botbowl.Player = proc.defender
+    dice = game.num_block_dice(attacker, defender)
+    num_dice = abs(dice)
 
-    attacker_down_p, defender_down_p, _, _ = game.get_block_probs(attacker, defender)
-
-    both_down_possible = not (attacker.has_skill(botbowl.Skill.BLOCK) and defender.has_skill(botbowl.Skill.BLOCK))
+    p_def_down, p_none_down, p_all_down, p_att_down = get_block_probs(game, attacker, defender)
 
 
 
-    raise NotImplementedError()
+    new_parent = ChanceNode(game, parent)
 
+    # -- Defender down -- #
+    with only_fixed_rolls(game, block_dice=[botbowl.BBDieResult.DEFENDER_DOWN]*num_dice):
+        game.step()
+
+    def_down_node = expand_none_action(game, new_parent)
+    new_parent.connect_child(def_down_node, p_def_down)
+    assert game.get_step() == new_parent.step_nbr
 
 def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
     """
