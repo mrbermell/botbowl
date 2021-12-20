@@ -1,4 +1,3 @@
-import time
 from abc import ABC
 from collections import Counter
 from functools import partial
@@ -208,10 +207,13 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
         proc = game.get_procedure()
         proc_type = type(proc)
 
+        # noinspection PyUnresolvedReferences
         if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
             return_node = expand_moving(game, parent)
         elif proc_type is procedures.Pickup and not pickup_handled:
             return_node = expand_pickup(game, parent)
+        elif proc_type is procedures.Block and proc.roll is None:
+            return_node = expand_block(game, parent)
         elif proc_type in proc_to_function:
             return_node = proc_to_function[proc_type](game, parent)
 
@@ -226,10 +228,6 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
     game.revert(parent.step_nbr)
     assert parent.step_nbr == game.get_step()
     return action_node
-
-
-# def expand_template(game: botbowl.Game, parent: Node) -> Node:
-#    raise NotImplementedError()
 
 
 def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
@@ -270,10 +268,6 @@ def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
     assert sum(new_parent.child_probability) == approx(1.0, abs=1e-9)
     assert game.get_step() == new_parent.step_nbr
     return new_parent
-
-
-def expand_handoff(game: botbowl.Game, parent: Node) -> Node:
-    raise NotImplementedError()
 
 
 def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
@@ -358,80 +352,30 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 def expand_armor(game: botbowl.Game, parent: Node) -> Node:
     # noinspection PyTypeChecker
     proc: procedures.Armor = game.get_procedure()
-    assert not proc.skip_armor
-    botbowl.D6.fix(1)
-    botbowl.D6.fix(1)
-    while proc in game.state.stack.items:
-        game.step()
-    return expand_none_action(game, parent)
+    assert not proc.foul
+
+    p_armorbreak = accumulated_prob_2d_roll[proc.player.get_av() + 1]
+    new_parent = ChanceNode(game, parent)
+    fix_step_connect2(game, new_parent, p_armorbreak, d6=[6, 6])  # Armor broken
+    fix_step_connect2(game, new_parent, 1-p_armorbreak, d6=[1, 1])  # Armor not broken
+    return new_parent
 
 
-def fix_step_connect(game: botbowl.Game,
-                     parent: ChanceNode,
-                     d6_fixes: List[int],
-                     prob: float,
-                     step_condition: Callable[[botbowl.Game], bool]):
-    for roll_fix in d6_fixes:
-        botbowl.D6.fix(roll_fix)
-    root_step = game.get_step()
-    while step_condition(game):
-        game.step(slow_step=True)
-    new_chance_node = ChanceNode(game, parent)
-    game.revert(root_step)
-    parent.connect_child(new_chance_node, prob=prob)
-    assert len(botbowl.D6.FixedRolls) == 0
+def expand_injury(game: botbowl.Game, parent: Node) -> Node:
+    # noinspection PyTypeChecker
+    proc: procedures.Injury = game.get_procedure()
+    assert not proc.foul
 
+    if proc.in_crowd:
+        with only_fixed_rolls(game, d6=[5, 4]):  # straight to KO
+            game.step()
+        return expand_none_action(game, parent)
 
-def get_block_probs(game: botbowl.Game, attacker: botbowl.Player, defender: botbowl.Player) -> Tuple[float, float, float, float]:
-    dice = game.num_block_dice(attacker, defender)
-    push_squares: List[botbowl.Square] = game.get_push_squares(attacker.position, defender.position)
-    crowd_push = push_squares[0].out_of_bounds  # and not defender.has_skill(Skill.STAND_FIRM)
-    who_has_block = (attacker.has_skill(Skill.BLOCK), defender.has_skill(Skill.BLOCK))
-
-    # initialize as 1d block without skills
-    dice_outcomes = np.array([2, 2, 1, 1], dtype=int)
-    def_down = 0
-    none_down = 1
-    all_down = 2
-    att_down = 3
-
-    if any(who_has_block):
-        dice_outcomes[all_down] = 0
-
-        if who_has_block == (True, True):  # both
-            dice_outcomes[none_down] += 1
-        elif who_has_block == (True, False):  # only attacker
-            dice_outcomes[def_down] += 1
-        elif who_has_block == (False, True):  # only defender
-            dice_outcomes[att_down] += 1
-
-    if crowd_push:
-        dice_outcomes[def_down] += 2
-        dice_outcomes[none_down] -= 2
-    elif defender.has_skill(Skill.DODGE):  # and not attacker.has_skill(Skill.TACKLE):
-        dice_outcomes[def_down] -= 1
-        dice_outcomes[none_down] += 2
-
-    prob = np.zeros(4)
-    probability_left = 1.0
-    available_dice = 6
-
-    if dice > 0:
-        order = [def_down, none_down, all_down, att_down]
-    else:
-        order = [att_down, all_down, none_down, def_down]
-        dice = -dice  # make positive
-
-    for i in order:
-        prob[i] = probability_left * (1 - (1 - dice_outcomes[i] / available_dice) ** dice)
-        available_dice -= dice_outcomes[i]
-        probability_left -= prob[i]
-
-    assert available_dice == 0
-    assert probability_left == approx(0)
-    assert prob.sum() == approx(1.0)
-
-    return tuple(prob)
+    p_removal = accumulated_prob_2d_roll[8]
+    new_parent = ChanceNode(game, parent)
+    fix_step_connect2(game, new_parent, p_removal, d6=[5, 4])  # KO
+    fix_step_connect2(game, new_parent, 1 - p_removal, d6=[1, 1])  # Stun
+    return new_parent
 
 
 def expand_block(game: botbowl.Game, parent: Node) -> Node:
@@ -439,57 +383,93 @@ def expand_block(game: botbowl.Game, parent: Node) -> Node:
     proc: botbowl.Block = game.get_procedure()
     assert type(proc) is botbowl.Block
     assert not proc.gfi, "Can't handle GFI:s here =( "
-
-    # this is an ugly solution. The procedure checking the re-roll.
-    if proc.roll is not None:
-        game.step()
-        return expand_none_action(game, parent)
+    assert proc.roll is None
 
     attacker: botbowl.Player = proc.attacker
     defender: botbowl.Player = proc.defender
     dice = game.num_block_dice(attacker, defender)
     num_dice = abs(dice)
 
-    p_def_down, p_none_down, p_all_down, p_att_down = get_block_probs(game, attacker, defender)
+    # initialize as 1d block without skills
+    dice_outcomes = np.array([2, 2, 1, 1], dtype=int)
+    DEF_DOWN, NOONE_DOWN, ALL_DOWN, ATT_DOWN = (0, 1, 2, 3)
+
+    die_results = ([BBDieResult.DEFENDER_DOWN, BBDieResult.DEFENDER_STUMBLES],
+                   [BBDieResult.PUSH],
+                   [BBDieResult.BOTH_DOWN],
+                   [BBDieResult.ATTACKER_DOWN])
+
+    push_squares: List[botbowl.Square] = game.get_push_squares(attacker.position, defender.position)
+    crowd_push = push_squares[0].out_of_bounds  # and not defender.has_skill(Skill.STAND_FIRM)
+    who_has_block = (attacker.has_skill(Skill.BLOCK), defender.has_skill(Skill.BLOCK))
+
+    if any(who_has_block):
+        dice_outcomes[ALL_DOWN] = 0
+        die_results[ALL_DOWN].clear()
+
+        if who_has_block == (True, True):  # both
+            dice_outcomes[NOONE_DOWN] += 1
+            die_results[NOONE_DOWN].append(BBDieResult.BOTH_DOWN)
+        elif who_has_block == (True, False):  # only attacker
+            dice_outcomes[DEF_DOWN] += 1
+            die_results[DEF_DOWN].append(BBDieResult.BOTH_DOWN)
+        elif who_has_block == (False, True):  # only defender
+            dice_outcomes[ATT_DOWN] += 1
+            die_results[ATT_DOWN].append(BBDieResult.BOTH_DOWN)
+
+    if crowd_push:
+        dice_outcomes[DEF_DOWN] += 2
+        dice_outcomes[NOONE_DOWN] -= 2
+        die_results[DEF_DOWN].append(BBDieResult.PUSH)
+        die_results[NOONE_DOWN].remove(BBDieResult.PUSH)
+    elif defender.has_skill(Skill.DODGE):  # and not attacker.has_skill(Skill.TACKLE):
+        dice_outcomes[DEF_DOWN] -= 1
+        dice_outcomes[NOONE_DOWN] += 2
+        die_results[ATT_DOWN].remove(BBDieResult.DEFENDER_STUMBLES)
+        die_results[NOONE_DOWN].append(BBDieResult.DEFENDER_STUMBLES)
+
+    prob = np.zeros(4)
+    probability_left = 1.0
+    available_dice = 6
+    evaluation_order = [DEF_DOWN, NOONE_DOWN, ALL_DOWN, ATT_DOWN]
+    if dice < 0:
+        evaluation_order = reversed(evaluation_order)
+
+    for i in evaluation_order:
+        prob[i] = probability_left * (1 - (1 - dice_outcomes[i] / available_dice) ** num_dice)
+        available_dice -= dice_outcomes[i]
+        probability_left -= prob[i]
+
+    assert available_dice == 0 and probability_left == approx(0) and prob.sum() == approx(1)
 
     new_parent = ChanceNode(game, parent)
 
-    # -- Prepare -- #
-    defender_dodge = defender.has_skill(Skill.DODGE)
-    defender_block = defender.has_skill(Skill.BLOCK)
-    attacker_block = attacker.has_skill(Skill.BLOCK)
+    for prob, die_res in zip(prob, die_results):
+        if prob == approx(0) or len(die_res) == 0:
+            assert prob == approx(0) and len(die_res) == 0
+            continue
 
-    # -- Defender down -- #
-    def_down_die_results = [BBDieResult.DEFENDER_DOWN]
-    if not defender_dodge:
-        def_down_die_results.append(BBDieResult.DEFENDER_STUMBLES)
-    if (not defender_block) and attacker_block:
-        def_down_die_results.append(BBDieResult.BOTH_DOWN)
-
-    fix_step_connect2(game, new_parent, p_def_down,
-                      block_dice=np.random.choice(def_down_die_results, num_dice))
-
-    # -- None down -- #
-    none_down_die_results = [BBDieResult.PUSH]
-    if defender_dodge:
-        none_down_die_results.append(BBDieResult.DEFENDER_STUMBLES)
-    if attacker_block and defender_block:
-        none_down_die_results.append(BBDieResult.BOTH_DOWN)
-
-    fix_step_connect2(game, new_parent, p_none_down,
-                      block_dice=np.random.choice(none_down_die_results, num_dice))
-
-
-    # -- Attacker or all down -- ##
-    att_down_die_results = [BBDieResult.ATTACKER_DOWN]
-    if not attacker_block:
-        att_down_die_results.append(BBDieResult.BOTH_DOWN)
-
-    fix_step_connect2(game, new_parent, p_all_down + p_att_down,
-                      block_dice=np.random.choice(att_down_die_results, num_dice))
-
+        fix_step_connect2(game, new_parent, prob,
+                          block_dice=np.random.choice(die_res, num_dice))
 
     assert sum(new_parent.child_probability) == approx(1.0)
+    return new_parent
+
+
+def expand_catch(game: botbowl.Game, parent: Node) -> Node:
+    # noinspection PyTypeChecker
+    proc: procedures.Catch = game.get_procedure()
+    assert type(proc) is procedures.Catch
+
+    p_catch = game.get_catch_prob(proc.player, accurate=proc.accurate, handoff=proc.handoff)
+
+    new_parent = ChanceNode(game, parent)
+    fix_step_connect2(game, new_parent, p_catch, d6=[6])  # Success
+    if proc.player.has_skill(Skill.CATCH):
+        fix_step_connect2(game, new_parent, 1 - p_catch, d6=[1, 1])  # Armor not broken
+    else:
+        fix_step_connect2(game, new_parent, 1 - p_catch, d6=[1])  # Armor not broken
+
     return new_parent
 
 
@@ -500,43 +480,16 @@ def fix_step_connect2(game, parent, probability, **fixes):
     parent.connect_child(new_node, probability)
 
 
-def expand_knockdown(node: ChanceNode, game: botbowl.Game) -> None:
-    """
-    :param node: node to store the different outcomes in.
-    :param game:
-    """
-    # noinspection PyTypeChecker
-    proc: botbowl.KnockDown = game.get_procedure()
-    assert type(proc) is botbowl.KnockDown
-    assert proc.armor_roll or proc.in_crowd
-
-    def step_condition(g: botbowl.Game):
-        return proc in g.state.stack.items
-
-    def _fix_step_connect(d6_fixes: List[int], prob: float):
-        fix_step_connect(game, node, d6_fixes, prob, step_condition)
-
-    if proc.in_crowd:
-        _fix_step_connect(d6_fixes=[1, 2], prob=1.0)  # injury roll is a KO
-    else:
-        p_armorbreak = accumulated_prob_2d_roll[proc.player.get_av() + 1]
-        p_injury_removal = accumulated_prob_2d_roll[8]  # KO
-
-        _fix_step_connect(d6_fixes=[1, 2], prob=1.0 - p_armorbreak)  # No armorbreak
-        _fix_step_connect(d6_fixes=[6, 5, 1, 2], prob=p_armorbreak * (1.0 - p_injury_removal))  # Stunned
-        _fix_step_connect(d6_fixes=[6, 5, 4, 5], prob=p_armorbreak * p_injury_removal)  # KO
-
-
 proc_to_function: Dict[Any, Callable[[botbowl.Game, Node], Node]] = \
-    {procedures.Block: expand_block,
-     procedures.Armor: expand_armor,
-     # procedures.Pickup: expand_pickup,
+    {procedures.Armor: expand_armor,
+     procedures.Injury: expand_injury,
      procedures.Bounce: expand_bounce,
-     # procedures.Catch: expand_template,
-     # procedures.Intercept: expand_template,
-     # procedures.Foul: expand_template,
-     # procedures.KickoffTable: expand_template,
-     # procedures.PassAttempt: expand_template,
-     # procedures.Scatter: expand_template,
      # procedures.ThrowIn: expand_template,
-     procedures.Handoff: expand_handoff}
+     procedures.Catch: expand_catch}
+
+# saved for later
+# procedures.Foul: expand_template,
+# procedures.KickoffTable: expand_template,
+# procedures.PassAttempt: expand_template,
+# procedures.Intercept: expand_template,
+# procedures.Scatter: expand_template,
