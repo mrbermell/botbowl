@@ -189,6 +189,35 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode
     return expand_none_action(game, parent)
 
 
+def get_expanding_function(proc, moving_handled, pickup_handled) -> Callable[[botbowl.Game, Node], Node]:
+    proc_type = type(proc)
+    if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
+        return expand_moving
+    elif proc_type is procedures.Pickup and not pickup_handled:
+        return expand_pickup
+    elif proc_type is procedures.Block and proc.roll is None:
+        return expand_block
+    elif proc_type is procedures.Armor:
+        return expand_armor
+    elif proc_type is procedures.Injury:
+        return expand_injury
+    elif proc_type is procedures.Bounce:
+        return expand_bounce
+    elif proc_type is procedures.Catch:
+        return expand_catch
+    elif proc_type is procedures.ThrowIn:
+        return expand_throw_in
+    else:
+        return None
+
+    # saved for later
+    # procedures.Foul
+    # procedures.KickoffTable
+    # procedures.PassAttempt
+    # procedures.Intercept
+    # procedures.Scatter
+
+
 def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, pickup_handled=False) -> Node:
     """
     :param game: the game state is changed during expansion but restored to state of argument 'parent'
@@ -202,22 +231,12 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
     Called recursively.
     """
 
-    return_node = None
     while len(game.state.available_actions) == 0:
         proc = game.get_procedure()
-        proc_type = type(proc)
+        expand_func = get_expanding_function(proc, moving_handled, pickup_handled)
 
-        # noinspection PyUnresolvedReferences
-        if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
-            return_node = expand_moving(game, parent)
-        elif proc_type is procedures.Pickup and not pickup_handled:
-            return_node = expand_pickup(game, parent)
-        elif proc_type is procedures.Block and proc.roll is None:
-            return_node = expand_block(game, parent)
-        elif proc_type in proc_to_function:
-            return_node = proc_to_function[proc_type](game, parent)
-
-        if return_node is not None:
+        if expand_func is not None:
+            return_node = expand_func(game, parent)
             game.revert(parent.step_nbr)
             return return_node
 
@@ -228,6 +247,10 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
     game.revert(parent.step_nbr)
     assert parent.step_nbr == game.get_step()
     return action_node
+
+
+def expand_throw_in(game: botbowl.Game, parent: Node) -> Node:
+    raise NotImplementedError()
 
 
 def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
@@ -356,8 +379,8 @@ def expand_armor(game: botbowl.Game, parent: Node) -> Node:
 
     p_armorbreak = accumulated_prob_2d_roll[proc.player.get_av() + 1]
     new_parent = ChanceNode(game, parent)
-    fix_step_connect2(game, new_parent, p_armorbreak, d6=[6, 6])  # Armor broken
-    fix_step_connect2(game, new_parent, 1-p_armorbreak, d6=[1, 1])  # Armor not broken
+    expand_with_fixes(game, new_parent, p_armorbreak, d6=[6, 6])  # Armor broken
+    expand_with_fixes(game, new_parent, 1 - p_armorbreak, d6=[1, 1])  # Armor not broken
     return new_parent
 
 
@@ -373,8 +396,8 @@ def expand_injury(game: botbowl.Game, parent: Node) -> Node:
 
     p_removal = accumulated_prob_2d_roll[8]
     new_parent = ChanceNode(game, parent)
-    fix_step_connect2(game, new_parent, p_removal, d6=[5, 4])  # KO
-    fix_step_connect2(game, new_parent, 1 - p_removal, d6=[1, 1])  # Stun
+    expand_with_fixes(game, new_parent, p_removal, d6=[5, 4])  # KO
+    expand_with_fixes(game, new_parent, 1 - p_removal, d6=[1, 1])  # Stun
     return new_parent
 
 
@@ -399,8 +422,6 @@ def expand_block(game: botbowl.Game, parent: Node) -> Node:
                    [BBDieResult.BOTH_DOWN],
                    [BBDieResult.ATTACKER_DOWN])
 
-    push_squares: List[botbowl.Square] = game.get_push_squares(attacker.position, defender.position)
-    crowd_push = push_squares[0].out_of_bounds  # and not defender.has_skill(Skill.STAND_FIRM)
     who_has_block = (attacker.has_skill(Skill.BLOCK), defender.has_skill(Skill.BLOCK))
 
     if any(who_has_block):
@@ -417,15 +438,17 @@ def expand_block(game: botbowl.Game, parent: Node) -> Node:
             dice_outcomes[ATT_DOWN] += 1
             die_results[ATT_DOWN].append(BBDieResult.BOTH_DOWN)
 
-    if crowd_push:
+    crowd_surf: bool = game.get_push_squares(attacker.position, defender.position)[0].out_of_bounds
+
+    if crowd_surf:
         dice_outcomes[DEF_DOWN] += 2
         dice_outcomes[NOONE_DOWN] -= 2
         die_results[DEF_DOWN].append(BBDieResult.PUSH)
         die_results[NOONE_DOWN].remove(BBDieResult.PUSH)
     elif defender.has_skill(Skill.DODGE):  # and not attacker.has_skill(Skill.TACKLE):
         dice_outcomes[DEF_DOWN] -= 1
-        dice_outcomes[NOONE_DOWN] += 2
-        die_results[ATT_DOWN].remove(BBDieResult.DEFENDER_STUMBLES)
+        dice_outcomes[NOONE_DOWN] += 1
+        die_results[DEF_DOWN].remove(BBDieResult.DEFENDER_STUMBLES)
         die_results[NOONE_DOWN].append(BBDieResult.DEFENDER_STUMBLES)
 
     prob = np.zeros(4)
@@ -449,7 +472,7 @@ def expand_block(game: botbowl.Game, parent: Node) -> Node:
             assert prob == approx(0) and len(die_res) == 0
             continue
 
-        fix_step_connect2(game, new_parent, prob,
+        expand_with_fixes(game, new_parent, prob,
                           block_dice=np.random.choice(die_res, num_dice))
 
     assert sum(new_parent.child_probability) == approx(1.0)
@@ -464,32 +487,21 @@ def expand_catch(game: botbowl.Game, parent: Node) -> Node:
     p_catch = game.get_catch_prob(proc.player, accurate=proc.accurate, handoff=proc.handoff)
 
     new_parent = ChanceNode(game, parent)
-    fix_step_connect2(game, new_parent, p_catch, d6=[6])  # Success
+
+    # Success scenario
+    expand_with_fixes(game, new_parent, p_catch, d6=[6])
+
+    # Failure scenario
     if proc.player.has_skill(Skill.CATCH):
-        fix_step_connect2(game, new_parent, 1 - p_catch, d6=[1, 1])  # Armor not broken
+        expand_with_fixes(game, new_parent, 1 - p_catch, d6=[1, 1])
     else:
-        fix_step_connect2(game, new_parent, 1 - p_catch, d6=[1])  # Armor not broken
+        expand_with_fixes(game, new_parent, 1 - p_catch, d6=[1])
 
     return new_parent
 
 
-def fix_step_connect2(game, parent, probability, **fixes):
+def expand_with_fixes(game, parent, probability, **fixes):
     with only_fixed_rolls(game, **fixes):
         game.step()
     new_node = expand_none_action(game, parent)
     parent.connect_child(new_node, probability)
-
-
-proc_to_function: Dict[Any, Callable[[botbowl.Game, Node], Node]] = \
-    {procedures.Armor: expand_armor,
-     procedures.Injury: expand_injury,
-     procedures.Bounce: expand_bounce,
-     # procedures.ThrowIn: expand_template,
-     procedures.Catch: expand_catch}
-
-# saved for later
-# procedures.Foul: expand_template,
-# procedures.KickoffTable: expand_template,
-# procedures.PassAttempt: expand_template,
-# procedures.Intercept: expand_template,
-# procedures.Scatter: expand_template,

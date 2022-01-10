@@ -8,7 +8,7 @@ from tests.util import get_custom_game_turn, only_fixed_rolls
 from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree
 from examples.tree_search2.Samplers import ActionSampler
 import botbowl
-from botbowl import Square, Action, ActionType
+from botbowl import Square, Action, ActionType, Skill
 
 
 # import numpy as np
@@ -121,7 +121,7 @@ def test_expand_block():
     game, (attacker, _, defender) = get_custom_game_turn(player_positions=[(5, 5), (7, 7)],
                                                          opp_player_positions=[(6, 6)],
                                                          forward_model_enabled=True)
-
+    defender.extra_skills.append(Skill.DODGE)
     tree = SearchTree(game)
 
     tree.expand_action_node(tree.root_node, Action(ActionType.START_BLOCK, player=attacker))
