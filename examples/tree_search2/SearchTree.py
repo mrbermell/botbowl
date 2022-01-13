@@ -250,7 +250,18 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
 
 
 def expand_throw_in(game: botbowl.Game, parent: Node) -> Node:
-    raise NotImplementedError()
+    # noinspection PyTypeChecker
+    active_proc: procedures.ThrowIn = game.get_procedure()
+    assert type(active_proc) is procedures.ThrowIn
+
+    d6_fixes = [3, 4] if game.config.arena.height > 7 else [1, 2]
+
+    with only_fixed_rolls(game, d3=[2], d6=d6_fixes):
+        game.step()
+
+    assert active_proc is not game.get_procedure()
+
+    return expand_none_action(game, parent)
 
 
 def expand_bounce(game: botbowl.Game, parent: Node) -> Node:

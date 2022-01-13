@@ -8,7 +8,7 @@ from tests.util import get_custom_game_turn, only_fixed_rolls
 from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree
 from examples.tree_search2.Samplers import ActionSampler
 import botbowl
-from botbowl import Square, Action, ActionType, Skill
+from botbowl import Square, Action, ActionType, Skill, BBDieResult
 
 
 # import numpy as np
@@ -141,6 +141,27 @@ def test_expand_block():
     assert len(tree.all_action_nodes) == 8
     next_node = tree.all_action_nodes[7]
     tree.expand_action_node(next_node, Action(ActionType.FOLLOW_UP, position=Square(6, 6)))
+
+
+def test_expand_throw_in():
+    game, (attacker, defender) = get_custom_game_turn(player_positions=[(5, 2)],
+                                                      opp_player_positions=[(5, 1)],
+                                                      ball_position=(5, 1),
+                                                      forward_model_enabled=True,
+                                                      pathfinding_enabled=True)
+
+    with only_fixed_rolls(game, block_dice=[BBDieResult.DEFENDER_DOWN]):
+        game.step(Action(ActionType.START_BLOCK, position=attacker.position))
+        game.step(Action(ActionType.BLOCK, position=defender.position))
+        game.step(Action(ActionType.SELECT_DEFENDER_DOWN))
+
+    action = Action(ActionType.PUSH, position=Square(5, 0))
+
+    tree = SearchTree(game)
+    tree.expand_action_node(tree.root_node, action)
+    assert len(tree.all_action_nodes) == 2
+
+
 
 
 
