@@ -101,12 +101,10 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
 
             if n.parent is tree.root_node:
                 break
-
-
+            n = n.parent
 
     node_queue = queue.Queue()
     node_queue.put(tree.root_node)
-
 
     while node_queue.qsize() > 0:
         node: ActionNode = node_queue.get()
