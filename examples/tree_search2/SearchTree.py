@@ -4,6 +4,7 @@ from functools import partial
 from operator import attrgetter
 from typing import Optional, Callable, List, Union, Dict, Any, Iterable, Tuple
 
+import more_itertools.more
 import numpy as np
 from more_itertools import collapse
 from pytest import approx
@@ -72,6 +73,10 @@ class ActionNode(Node):
         super()._connect_child(child_node)
         self.explored_actions.append(action)
 
+    def get_child_action(self, child: Node) -> botbowl.Action:
+        assert child in self.children
+        return self.explored_actions[self.children.index(child)]
+
     def get_all_parents(self, include_self) -> Iterable[Node]:
         if include_self:
             yield self
@@ -82,6 +87,21 @@ class ActionNode(Node):
             node = node.parent
         return
 
+    def get_children_from_action(self, action: botbowl.Action) -> Iterable['ActionNode']:
+        if action not in self.explored_actions:
+            return
+        child = self.children[self.explored_actions.index(action)]
+        return get_action_node_children(child)
+
+
+def get_action_node_children(node: Node) -> Iterable[ActionNode]:
+    if isinstance(node, ActionNode):
+        yield node
+        return
+    elif isinstance(node, ChanceNode):
+        return more_itertools.collapse(map(get_action_node_children, node.children))
+    else:
+        raise ValueError()
 
 class ChanceNode(Node):
     """
@@ -102,6 +122,9 @@ class ChanceNode(Node):
         super()._connect_child(child_node)
         self.child_probability.append(prob)
 
+    def get_child_prob(self, child_node: Node) -> float:
+        assert child_node in self.children
+        return self.child_probability[self.children.index(child_node)]
 
 class SearchTree:
     game: botbowl.Game

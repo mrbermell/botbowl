@@ -1,7 +1,9 @@
 from functools import partial
 from operator import attrgetter, itemgetter
-from typing import Tuple, Union, Optional
+from typing import Tuple, Union, Optional, Callable, List
+import queue
 
+import numpy as np
 from pytest import approx
 
 import botbowl
@@ -64,3 +66,69 @@ def get_best_action(node: Union[ChanceNode, ActionNode]) -> Tuple[Optional[botbo
             action, value = max(((action, get_best_action(child)[1])
                                 for action, child in zip(node.explored_actions, node.children)), key=itemgetter(1))
             return action, value
+
+
+Policy = Callable[[botbowl.Game], Tuple[float, np.ndarray, List[botbowl.Action]]]
+def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
+
+    def continue_expansion(a_node: ActionNode) -> bool:
+        raise NotImplementedError() # todo
+
+    def setup_node(new_node: ActionNode):
+        if 'probabilities' not in new_node.info:
+            tree.set_game_to_node(new_node)
+            state_value, probabilities, actions = policy(tree.game)
+            new_node.info['actions'] = actions
+            new_node.info['probabilities'] = probabilities
+            new_node.info['state_value'] = state_value
+            new_node.info['action_values'] = np.zeros(len(probabilities))
+            new_node.info['visit_count'] = np.zeros(len(probabilities), dtype=np.int)
+
+    def back_propagate(final_node: ActionNode):
+        propagated_value = final_node.info['state_value'] + final_node.reward
+
+        n = final_node
+        while True:
+            if isinstance(n.parent, ChanceNode):
+                propagated_value *= n.parent.get_child_prob(n)
+            elif isinstance(n.parent, ActionNode):
+                action_object = n.parent.get_child_action(n)
+                action_index = n.parent.info['actions'].index(action_object)
+                n.parent.info['action_values'][action_index] += propagated_value
+                propagated_value += n.parent.reward
+            else:
+                raise ValueError()
+
+            if n.parent is tree.root_node:
+                break
+
+
+
+    node_queue = queue.Queue()
+    node_queue.put(tree.root_node)
+
+
+    while node_queue.qsize() > 0:
+        node: ActionNode = node_queue.get()
+        setup_node(node)
+
+        # pick next action
+        probs = node.info['probabilities']
+        action_values = node.info['action_values']
+        visits = node.info['visit_count']
+        a_index = np.argmax(action_values + 0.25*probs/(1+visits))
+        visits[a_index] += 1  # increment visit count
+
+        # expand action and handle new nodes
+        action: botbowl.Action = node.info['actions'][a_index]
+        if action not in node.explored_actions:
+            tree.expand_action_node(node, action)
+
+        for child_node in node.get_children_from_action(action):
+            setup_node(child_node)
+            if continue_expansion(child_node):
+                node_queue.put(child_node)
+            else:
+                # backpropagation!
+                back_propagate(child_node)
+
