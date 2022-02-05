@@ -2,7 +2,8 @@ from abc import ABC
 from collections import Counter
 from functools import partial
 from operator import attrgetter
-from typing import Optional, Callable, List, Union, Dict, Any, Iterable, Tuple
+from queue import Queue
+from typing import Optional, Callable, List, Union, Iterable
 
 import more_itertools.more
 import numpy as np
@@ -10,10 +11,12 @@ from more_itertools import collapse
 from pytest import approx
 
 import botbowl
-from botbowl import Skill, BBDieResult
 import botbowl.core.forward_model as forward_model
 import botbowl.core.procedure as procedures
+from botbowl import Skill, BBDieResult
 from tests.util import only_fixed_rolls
+from .hashmap import HashMap
+from botbowl.core.util import compare_object
 
 accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
 
@@ -52,6 +55,7 @@ class ActionNode(Node):
     turn: int
     depth: int
     info: dict  # Only purpose is to store information for users of SearchTree
+    simple_hash: str
 
     def __init__(self, game: botbowl.Game, parent: Optional[Node], reward=0.0):
         super().__init__(game, parent)
@@ -60,6 +64,7 @@ class ActionNode(Node):
         self.explored_actions = []
         self.turn = self.team.state.turn
         self.info = {}
+        self.simple_hash = ActionNode.hash_game_state(game)
 
         if parent is None:
             self.depth = 0
@@ -92,6 +97,23 @@ class ActionNode(Node):
             return
         child = self.children[self.explored_actions.index(action)]
         return get_action_node_children(child)
+
+    def __hash__(self):
+        return hash(self.simple_hash)
+
+    def __eq__(self, other):
+        raise NotImplementedError()
+
+    @staticmethod
+    def hash_game_state(game: botbowl.Game) -> str:
+        s = ""
+        s += "h" if game.active_team is game.state.home_team else "a"
+        s += str(game.state.round)
+        s += str(game.active_team.state.turn)
+        s += type(game.get_procedure()).__name__
+        s += f"{hash(game.get_ball_position())}-"
+        s += " ".join(hash(p.position) for p in game.get_players_on_pitch())+"-"
+        return s
 
 
 def get_action_node_children(node: Node) -> Iterable[ActionNode]:
@@ -129,14 +151,14 @@ class ChanceNode(Node):
 class SearchTree:
     game: botbowl.Game
     root_node: ActionNode
-    all_action_nodes: List[ActionNode]
+    all_action_nodes: HashMap
     current_node: ActionNode
     on_every_action_node: Callable[['SearchTree', ActionNode], None]
 
     def __init__(self, game, on_every_action_node=None):
         self.game = game
         self.root_node = ActionNode(game, None)
-        self.all_action_nodes = [self.root_node]
+        self.all_action_nodes = HashMap([self.root_node])
         self.current_node = self.root_node
         self.on_every_action_node = on_every_action_node
 
@@ -184,12 +206,30 @@ class SearchTree:
     def _look_for_action_nodes(self, node: Node):
         if isinstance(node, ActionNode):
             assert node not in self.all_action_nodes
-            self.all_action_nodes.append(node)
+            self.all_action_nodes.add(node)
             if self.on_every_action_node is not None:
                 self.on_every_action_node(self, node)
 
         for child_node in node.children:
             self._look_for_action_nodes(child_node)
+
+    def __contains__(self, game: botbowl.Game) -> bool:
+        assert type(game) is botbowl.Game
+        if self.game is game:
+            raise ValueError("Can't search the tree for its own game object.")
+
+        target_node = ActionNode(game, None)
+
+        possible_matches = self.all_action_nodes[target_node]
+
+        # compare with all nodes that have the same hash
+        for node in self.all_action_nodes[target_node]:
+            self.set_game_to_node(node)
+            diff = self.game.state.compare(game.state)
+            if len(diff) == 0:
+                return True
+        return False
+
 
 
 def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode) -> Node:

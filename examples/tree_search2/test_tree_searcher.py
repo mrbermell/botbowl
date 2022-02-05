@@ -9,7 +9,7 @@ from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNo
 from examples.tree_search2.Samplers import ActionSampler
 import botbowl
 from botbowl import Square, Action, ActionType, Skill, BBDieResult
-
+from copy import deepcopy
 
 # import numpy as np
 
@@ -162,7 +162,20 @@ def test_expand_throw_in():
     assert len(tree.all_action_nodes) == 2
 
 
+def test_set_new_root():
+    game, (player1, player2, opp_player) = get_custom_game_turn(player_positions=[(5, 5), (6, 6)],
+                                                                opp_player_positions=[(4, 4)],
+                                                                ball_position=(5, 5),
+                                                                pathfinding_enabled=True,
+                                                                forward_model_enabled=True)
 
+    action = Action(ActionType.START_MOVE, position=player2.position)
 
+    tree = SearchTree(deepcopy(game))
+    tree.expand_action_node(tree.root_node, action)
+
+    game.step(action)
+
+    assert game in tree
 
 
