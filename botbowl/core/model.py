@@ -265,6 +265,7 @@ class PlayerState(Reversible):
         self.used_skills = set()
         self.squares_moved = []
         self.has_blocked = False
+        self.failed_nega_trait_this_turn = False
 
     def to_json(self):
         return {
@@ -285,7 +286,8 @@ class PlayerState(Reversible):
             'wild_animal': self.wild_animal,
             'taken_root': self.taken_root,
             'blood_lust': self.blood_lust,
-            'has_blocked': self.has_blocked
+            'has_blocked': self.has_blocked,
+            'failed_nega_trait_this_turn': self.failed_nega_trait_this_turn
         }
 
     def reset(self):
@@ -303,11 +305,13 @@ class PlayerState(Reversible):
         self.picked_up = False
         self.used_skills.clear()
         self.squares_moved.clear()
+        self.failed_nega_trait_this_turn = False
 
     def reset_turn(self):
         self.moves = 0
         self.used = False
         self.used_skills.clear()
+        self.failed_nega_trait_this_turn = False
         self.squares_moved.clear()
 
     always_show_attr = ['up']
@@ -1203,6 +1207,9 @@ class Player(Piece, Reversible):
     def get_skills(self):
         return self.role.skills + self.extra_skills
 
+    def num_gfis_left(self):
+        return self.num_moves_left(include_gfi=True) - self.num_moves_left(include_gfi=False)
+
     def has_tackle_zone(self):
         if self.has_skill(Skill.TITCHY):
             return False
@@ -1217,20 +1224,16 @@ class Player(Piece, Reversible):
     def can_assist(self):
         return self.state.up and not self.state.bone_headed and not self.state.hypnotized and not self.state.really_stupid
 
-    def num_moves_left(self, include_gfi: bool = True):
-        if self.state.used or self.state.stunned:
-            moves = 0
-        else:
-            moves = self.get_ma()
-            if not self.state.up and not self.has_skill(Skill.JUMP_UP):
-                moves = max(0, moves - 3)
-            moves = moves - self.state.moves
-            if include_gfi:
-                if self.has_skill(Skill.SPRINT):
-                    moves = moves + 3
-                else:
-                    moves = moves + 2
-        return moves
+    def num_moves_left(self, include_gfi: bool = False):
+        if self.state.taken_root or self.state.used or self.state.stunned:
+            return 0
+        moves = self.get_ma() - self.state.moves
+        if include_gfi:
+            if self.has_skill(Skill.SPRINT):
+                moves = moves + 3
+            else:
+                moves = moves + 2
+        return max(0, moves)
 
     def __eq__(self, other):
         return isinstance(other, Player) and other.player_id == self.player_id
@@ -1421,19 +1424,24 @@ class Formation(Immutable):
         return players[0]
 
     def actions(self, game, team):
+        reorganize = game.get_procedure().reorganize
+
         home = team == game.state.home_team
         actions = []
         # Move all player on the pitch back to the reserves
         player_on_pitch = []
         for player in team.players:
             if player.position is not None:
-                actions.append(Action(ActionType.PLACE_PLAYER, position=None, player=player))
+                if not reorganize:
+                    actions.append(Action(ActionType.PLACE_PLAYER, position=None, player=player))
                 player_on_pitch.append(player)
 
         # Go through formation from scrimmage to touchdown zone
-        players = [player for player in game.get_reserves(team) + player_on_pitch]
+        players = player_on_pitch
+        if not reorganize:
+            players += game.get_reserves(team)
 
-        positions_used = []
+        positions_used = set()
 
         # setup on scrimmage
         for t in ['S', 's', 'p', 'b', 'c', 'm', 'a', 'v', 'd', '0', 'x']:
@@ -1452,7 +1460,7 @@ class Formation(Immutable):
                 player = self._get_player(players, t)
                 players.remove(player)
                 actions.append(Action(ActionType.PLACE_PLAYER, position=position, player=player))
-                positions_used.append(position)
+                positions_used.add(position)
 
         for t in ['S', 's', 'p', 'b', 'c', 'm', 'a', 'v', 'd', '0', 'x']:
             for y in range(len(self.formation)):
@@ -1470,7 +1478,7 @@ class Formation(Immutable):
                     player = self._get_player(players, t)
                     players.remove(player)
                     actions.append(Action(ActionType.PLACE_PLAYER, position=position, player=player))
-                    positions_used.append(position)
+                    positions_used.add(position)
         return actions
 
     def compare(self, other, path):
