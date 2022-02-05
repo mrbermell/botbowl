@@ -70,9 +70,20 @@ def get_best_action(node: Union[ChanceNode, ActionNode]) -> Tuple[Optional[botbo
 
 Policy = Callable[[botbowl.Game], Tuple[float, np.ndarray, List[botbowl.Action]]]
 def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
+    tree.set_game_to_node(tree.root_node)
+    game = tree.game
+
+    scores = game.state.home_team.state.score + game.state.away_team.state.score
+    my_team = game.actor
+    my_turn_num = tree.root_node.turn
 
     def continue_expansion(a_node: ActionNode) -> bool:
-        raise NotImplementedError() # todo
+        tree.set_game_to_node(a_node)
+        if game.actor is my_team and my_turn_num != a_node.turn:
+            return False
+        if game.state.home_team.state.score + game.state.away_team.state.score != scores:
+            return False
+        return True
 
     def setup_node(new_node: ActionNode):
         if 'probabilities' not in new_node.info:
