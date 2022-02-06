@@ -138,6 +138,7 @@ def test_expand_block():
     assert len(tree.all_action_nodes) == 8
     next_node, *_ = tree.expand_action_node(next_node, Action(ActionType.FOLLOW_UP, position=Square(6, 6)))
 
+    assert len(tree.all_action_nodes) == 11
 
 def test_expand_throw_in():
     game, (attacker, defender) = get_custom_game_turn(player_positions=[(5, 2)],
