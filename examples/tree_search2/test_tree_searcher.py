@@ -124,23 +124,19 @@ def test_expand_block():
     defender.extra_skills.append(Skill.DODGE)
     tree = SearchTree(game)
 
-    tree.expand_action_node(tree.root_node, Action(ActionType.START_BLOCK, player=attacker))
+    next_node, = tree.expand_action_node(tree.root_node, Action(ActionType.START_BLOCK, player=attacker))
 
     assert len(tree.all_action_nodes) == 2
-    next_node = tree.all_action_nodes[1]
-    tree.expand_action_node(next_node, Action(ActionType.BLOCK, position=defender.position))
+    next_node, *_ = tree.expand_action_node(next_node, Action(ActionType.BLOCK, position=defender.position))
 
     assert len(tree.all_action_nodes) == 6
-    next_node = tree.all_action_nodes[2]
-    tree.expand_action_node(next_node, Action(ActionType.SELECT_DEFENDER_DOWN))
+    next_node, = tree.expand_action_node(next_node, Action(ActionType.SELECT_DEFENDER_DOWN))
 
     assert len(tree.all_action_nodes) == 7
-    next_node = tree.all_action_nodes[6]
-    tree.expand_action_node(next_node, Action(ActionType.PUSH, position=Square(7, 6)))
+    next_node, = tree.expand_action_node(next_node, Action(ActionType.PUSH, position=Square(7, 6)))
 
     assert len(tree.all_action_nodes) == 8
-    next_node = tree.all_action_nodes[7]
-    tree.expand_action_node(next_node, Action(ActionType.FOLLOW_UP, position=Square(6, 6)))
+    next_node, *_ = tree.expand_action_node(next_node, Action(ActionType.FOLLOW_UP, position=Square(6, 6)))
 
 
 def test_expand_throw_in():
