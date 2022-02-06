@@ -1,21 +1,36 @@
-from typing import Optional, Iterable
+from typing import Optional, Iterable, Protocol
+
+
+class HasSimpleHash(Protocol):
+    simple_hash: str
+
 
 class HashMap:
-    data: dict[int, list]
+    data: dict[str, list[HasSimpleHash]]
 
-    def __init__(self, values: Optional[Iterable]=None):
+    def __init__(self, values: Optional[Iterable[HasSimpleHash]]=None):
         self.data = {}
         if values is not None:
             for item in values:
                 self.add(item)
 
-    def __contains__(self, item):
-        if hash(item) in self.data:
-            return item in self.data[hash(item)]
+    def __contains__(self, item: HasSimpleHash):
+        if item.simple_hash in self.data:
+            for possible_match in self.data[item.simple_hash]:
+                if item is possible_match:
+                    return True
         return False
 
-    def add(self, item):
-        self.data.setdefault(hash(item), []).append(item)
+    def add(self, item: HasSimpleHash):
+        self.data.setdefault(item.simple_hash, []).append(item)
 
     def __getitem__(self, item):
-        return self.data.setdefault(hash(item), [])
+        return self.data.setdefault(item.simple_hash, [])
+
+    def __len__(self):
+        return sum(map(len, self.data.values()))
+
+    def __iter__(self):
+        for item_list in self.data.values():
+            for item in item_list:
+                yield item

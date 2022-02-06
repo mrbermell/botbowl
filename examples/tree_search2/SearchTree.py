@@ -1,8 +1,7 @@
 from abc import ABC
 from collections import Counter
+from copy import deepcopy
 from functools import partial
-from operator import attrgetter
-from queue import Queue
 from typing import Optional, Callable, List, Union, Iterable
 
 import more_itertools.more
@@ -16,7 +15,6 @@ import botbowl.core.procedure as procedures
 from botbowl import Skill, BBDieResult
 from tests.util import only_fixed_rolls
 from .hashmap import HashMap
-from botbowl.core.util import compare_object
 
 accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
 
@@ -53,7 +51,6 @@ class ActionNode(Node):
     team: botbowl.Team
     explored_actions: List[botbowl.Action]
     turn: int
-    depth: int
     info: dict  # Only purpose is to store information for users of SearchTree
     simple_hash: str
 
@@ -66,13 +63,14 @@ class ActionNode(Node):
         self.info = {}
         self.simple_hash = ActionNode.hash_game_state(game)
 
-        if parent is None:
-            self.depth = 0
-        else:
+        if parent is not None:
             node: ActionNode = parent
             while type(node) != type(self):
                 node = node.parent
-            self.depth = node.depth + 1
+
+    @property
+    def depth(self):
+        return len(list(filter(lambda n: type(n) is ActionNode, self.get_all_parents(include_self=False))))
 
     def connect_child(self, child_node: Node, action: botbowl.Action):
         super()._connect_child(child_node)
@@ -81,6 +79,10 @@ class ActionNode(Node):
     def get_child_action(self, child: Node) -> botbowl.Action:
         assert child in self.children
         return self.explored_actions[self.children.index(child)]
+
+    def make_root(self):
+        self.parent = None
+        self.change_log.clear()
 
     def get_all_parents(self, include_self) -> Iterable[Node]:
         if include_self:
@@ -112,7 +114,7 @@ class ActionNode(Node):
         s += str(game.active_team.state.turn)
         s += type(game.get_procedure()).__name__
         s += f"{hash(game.get_ball_position())}-"
-        s += " ".join(hash(p.position) for p in game.get_players_on_pitch())+"-"
+        s += " ".join(str(hash(p.position)) for p in game.get_players_on_pitch())+"-"
         return s
 
 
@@ -166,7 +168,28 @@ class SearchTree:
             self.on_every_action_node(self, self.root_node)
 
     def set_new_root(self, game: botbowl.Game) -> None:
-        pass  # todo
+        if self.game is game:
+            raise ValueError("Can't search the tree for its own game object.")
+
+        target_node = ActionNode(game, None)
+        found_node = None
+
+        # compare with all nodes that have the same hash
+        for node in self.all_action_nodes[target_node]:
+            self.set_game_to_node(node)
+            diff = self.game.state.compare(game.state)
+            if len(diff) == 0:
+                found_node = node
+                break
+
+        if found_node is None:
+            self.__init__(deepcopy(game), self.on_every_action_node)
+        else:
+            self.root_node = found_node
+            self.root_node.make_root()
+            self.set_game_to_node(self.root_node)
+            self.all_action_nodes = HashMap()
+            self._look_for_action_nodes(self.root_node)  # add all children to the 'self.all_action_nodes'
 
     def set_game_to_node(self, target_node: ActionNode) -> None:
         """Uses forward model to set self.game to the state of Node"""
@@ -186,13 +209,14 @@ class SearchTree:
         if target_node is self.root_node:
             return
 
-        for steps in reversed(list(map(attrgetter('change_log'), target_node.get_all_parents(include_self=True)))):
-            self.game.forward(steps)
+        for node in reversed( list(target_node.get_all_parents(include_self=True))):
+            self.game.forward(node.change_log)
+
         self.current_node = target_node
 
         assert target_node.step_nbr == self.game.get_step(), f"{target_node.step_nbr} != {self.game.get_step()}"
 
-    def expand_action_node(self, node: ActionNode, action: botbowl.Action) -> None:
+    def expand_action_node(self, node: ActionNode, action: botbowl.Action) -> List[ActionNode]:
         assert action not in node.explored_actions, f"{action} has already been explored in this node"
         assert node in self.all_action_nodes, f"{node} is not in all_action_nodes"
         self.set_game_to_node(node)
@@ -201,35 +225,20 @@ class SearchTree:
         self.set_game_to_node(self.root_node)
 
         # find all newly added action nodes
-        self._look_for_action_nodes(new_node)
+        return self._look_for_action_nodes(new_node)
 
-    def _look_for_action_nodes(self, node: Node):
+    def _look_for_action_nodes(self, node: Node) -> List[ActionNode]:
+        new_action_nodes = []
         if isinstance(node, ActionNode):
             assert node not in self.all_action_nodes
+            new_action_nodes.append(node)
             self.all_action_nodes.add(node)
             if self.on_every_action_node is not None:
                 self.on_every_action_node(self, node)
 
         for child_node in node.children:
-            self._look_for_action_nodes(child_node)
-
-    def __contains__(self, game: botbowl.Game) -> bool:
-        assert type(game) is botbowl.Game
-        if self.game is game:
-            raise ValueError("Can't search the tree for its own game object.")
-
-        target_node = ActionNode(game, None)
-
-        possible_matches = self.all_action_nodes[target_node]
-
-        # compare with all nodes that have the same hash
-        for node in self.all_action_nodes[target_node]:
-            self.set_game_to_node(node)
-            diff = self.game.state.compare(game.state)
-            if len(diff) == 0:
-                return True
-        return False
-
+            new_action_nodes.extend(self._look_for_action_nodes(child_node))
+        return new_action_nodes
 
 
 def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode) -> Node:

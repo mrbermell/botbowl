@@ -169,13 +169,54 @@ def test_set_new_root():
                                                                 pathfinding_enabled=True,
                                                                 forward_model_enabled=True)
 
-    action = Action(ActionType.START_MOVE, position=player2.position)
+    action_p2_1 = Action(ActionType.START_BLITZ, position=player2.position)
+    action_p2_2 = Action(ActionType.BLOCK, position=Square(4, 4))
+
+    action_p1_1 = Action(ActionType.START_MOVE, position=player1.position)
+    action_p1_2 = Action(ActionType.MOVE, position=Square(1, 5))
 
     tree = SearchTree(deepcopy(game))
-    tree.expand_action_node(tree.root_node, action)
+    assert tree.root_node.depth == 0
 
-    game.step(action)
 
-    assert game in tree
+    # Move player 2
+    new_node, = tree.expand_action_node(tree.root_node, action_p2_1)
+    new_nodes = tree.expand_action_node(new_node, action_p2_2)
+
+    assert new_node.depth == 1
+    assert new_nodes[0].depth == 2
+    assert len(tree.all_action_nodes) == 2 + 4
+
+    # Move player 1
+    new_node, = tree.expand_action_node(tree.root_node, action_p1_1)
+    assert len(tree.all_action_nodes) == 2 + 4 + 1
+    new_nodes = tree.expand_action_node(new_node, action_p1_2)
+
+    assert new_node.depth == 1
+    assert new_nodes[0].depth == 2
+    assert len(tree.all_action_nodes) == 2 + 4 + 1 + 7
+
+    game.step(action_p1_1)
+    tree.set_new_root(game)
+
+    assert len(tree.all_action_nodes) == 8
+    assert new_node is tree.root_node
+    assert new_node.depth == 0
+    assert new_nodes[0].depth == 1
+
+    with only_fixed_rolls(game, d6=[6]):
+        game.step(action_p1_2)
+
+    tree.set_new_root(game)
+    tree.expand_action_node(tree.root_node, Action(ActionType.SETUP_FORMATION_SPREAD))
+    assert new_nodes[0] is tree.root_node
+    assert len(tree.all_action_nodes) == 2
+
+    game.step(Action(ActionType.SETUP_FORMATION_SPREAD))
+    game.step(Action(ActionType.END_SETUP))
+    tree.set_new_root(game)
+    assert len(tree.all_action_nodes) == 1
+    assert len(tree.root_node.children) == 0
+
 
 
