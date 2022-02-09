@@ -104,6 +104,37 @@ class ActionSampler:
         return len(self.actions)
 
 
+use_directly_action_types = [ActionType.START_GAME,
+                             ActionType.TAILS,
+                             ActionType.RECEIVE,
+                             ]
+
+
+def scripted_action(game: botbowl.Game) -> Optional[Action]:
+    available_action_types = {action_choice.action_type for action_choice in game.get_available_actions()}
+
+    for at in use_directly_action_types:
+        if at in available_action_types:
+            return Action(at)
+
+    if ActionType.PLACE_BALL in available_action_types:
+        x = game.arena.width // 4
+        if game.active_team is game.state.away_team:
+            x *= 3
+        y = game.arena.height // 2
+        return Action(ActionType.PLACE_BALL, position=botbowl.Square(x, y))
+
+    proc = game.get_procedure()
+    if type(proc) is Setup:
+        if game.is_setup_legal(game.active_team):
+            return Action(ActionType.END_SETUP)
+        for at in available_action_types:
+            if at not in {ActionType.END_SETUP, ActionType.PLACE_PLAYER}:
+                return Action(at)
+
+    return None
+
+
 class MockPolicy:
     def __init__(self):
         self.env_conf = EnvConf()
@@ -139,6 +170,11 @@ class MockPolicy:
         return [Action(ActionType.MOVE, position=pos) for pos in action_choice.positions]
 
     def __call__(self, game: botbowl.Game) -> Tuple[float, np.ndarray, List[botbowl.Action]]:
+        action = scripted_action(game)
+        if action is not None:
+            return 0.0, np.array([1.0]), [action]
+
+
         actions: List[botbowl.Action] = []
 
         if self.end_setup:

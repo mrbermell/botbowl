@@ -1,10 +1,11 @@
-from botbowl.core.model import Agent
-from botbowl import Game
 from copy import deepcopy
-
 from time import perf_counter
 
 from SearchTree import SearchTree
+from botbowl import Game
+from botbowl.core.model import Agent
+from tests.util import get_custom_game_turn
+
 
 class SearchAgent(Agent):
     tree: SearchTree
@@ -38,3 +39,14 @@ class SearchAgent(Agent):
 
     def end_game(self, game):
         pass
+
+
+
+def main():
+    game = get_custom_game_turn(player_positions=[(6, 6), (7, 7)],
+                                opp_player_positions=[(5, 6)],
+                                ball_position=(6, 6),
+                                pathfinding_enabled=True)
+
+if __name__ == "__main__":
+    main()
