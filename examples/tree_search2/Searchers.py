@@ -89,11 +89,24 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
         if 'probabilities' not in new_node.info:
             tree.set_game_to_node(new_node)
             state_value, probabilities, actions = policy(tree.game)
-            new_node.info['actions'] = actions
-            new_node.info['probabilities'] = probabilities
-            new_node.info['state_value'] = state_value
-            new_node.info['action_values'] = np.zeros(len(probabilities))
-            new_node.info['visit_count'] = np.zeros(len(probabilities), dtype=np.int)
+            action_values = np.zeros(len(probabilities))
+            visit_count = np.zeros(len(probabilities), dtype=np.int)
+
+            heuristic = get_heuristic(tree.game) # todo: coefficients needed!
+            reward = 0
+            if new_node.parent is not None:
+                for parent in new_node.get_all_parents(include_self=False):
+                    if isinstance(parent, ActionNode):
+                        reward = heuristic - parent.info['mcts'][4]
+
+            new_node.info['mcts'] = (probabilities,
+                                     actions,
+                                     action_values,
+                                     visit_count,
+                                     heuristic,
+                                     reward,
+                                     state_value)
+
 
     def back_propagate(final_node: ActionNode):
         propagated_value = final_node.info['state_value'] + final_node.reward

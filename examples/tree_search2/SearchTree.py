@@ -158,7 +158,13 @@ class SearchTree:
     on_every_action_node: Callable[['SearchTree', ActionNode], None]
 
     def __init__(self, game, on_every_action_node=None):
-        self.game = game
+        self.game = deepcopy(game)
+
+        self.game.home_agent.human = True
+        self.game.away_agent.human = True
+        if not self.game.trajectory.enabled:
+            self.game.enable_forward_model()
+
         self.root_node = ActionNode(game, None)
         self.all_action_nodes = HashMap([self.root_node])
         self.current_node = self.root_node
