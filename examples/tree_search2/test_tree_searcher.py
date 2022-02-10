@@ -3,10 +3,11 @@ from random import randint
 import pytest
 from pytest import approx
 
-from examples.tree_search2.Searchers import gotebot_heuristic, get_best_action, get_heuristic
+from examples.tree_search2.Searchers import gotebot_heuristic, get_best_action, get_heuristic, do_mcts_branch
 from tests.util import get_custom_game_turn, only_fixed_rolls
-from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree
-from examples.tree_search2.Samplers import ActionSampler
+from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree, \
+    get_action_node_children
+from examples.tree_search2.Samplers import ActionSampler, MockPolicy
 import botbowl
 from botbowl import Square, Action, ActionType, Skill, BBDieResult
 from copy import deepcopy
@@ -216,4 +217,30 @@ def test_set_new_root():
     assert len(tree.root_node.children) == 0
 
 
+def test_mcts():
+    game, _ = get_custom_game_turn(player_positions=[(6, 6), (7, 7)],
+                                opp_player_positions=[(5, 6)],
+                                ball_position=(6, 6),
+                                pathfinding_enabled=True)
 
+    tree = SearchTree(game)
+    policy = MockPolicy()
+    for _ in range(100):
+        do_mcts_branch(tree, policy)
+
+    from more_itertools import first
+    setup_node_name = first(filter(lambda s: s.find('Setup')>0,  tree.all_action_nodes.data))
+    setup_node: ActionNode = tree.all_action_nodes.data[setup_node_name][0]
+    chance_node = setup_node.parent
+    assert isinstance(chance_node, ChanceNode)
+
+    action_children = list(get_action_node_children(chance_node))
+    assert len(action_children) > 0
+    assert len(action_children) > 1
+
+
+    print("")
+    mcts_info = tree.root_node.info['mcts']
+    for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
+        action.player = None
+        print(f"{action}, {visits=}, {action_val=}")

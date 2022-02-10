@@ -34,7 +34,10 @@ class Node(ABC):
         self.children = []
         self.change_log = game.trajectory.action_log[parent.step_nbr:] if parent is not None else []
         self.top_proc = str(game.get_procedure())
-        assert parent is None or len(self.change_log) > 0
+
+        #if parent is not None and len(self.change_log) == 0:
+        #    raise AttributeError()
+        #assert parent is None or len(self.change_log) > 0
 
     def _connect_child(self, child_node: 'Node'):
         assert child_node.parent is self
@@ -104,7 +107,8 @@ class ActionNode(Node):
         return hash(self.simple_hash)
 
     def __eq__(self, other):
-        raise NotImplementedError()
+        #raise NotImplementedError()
+        return self is other
 
     @staticmethod
     def hash_game_state(game: botbowl.Game) -> str:
@@ -120,8 +124,7 @@ class ActionNode(Node):
 
 def get_action_node_children(node: Node) -> Iterable[ActionNode]:
     if isinstance(node, ActionNode):
-        yield node
-        return
+        return [node]
     elif isinstance(node, ChanceNode):
         return more_itertools.collapse(map(get_action_node_children, node.children))
     else:
@@ -271,7 +274,7 @@ def get_expanding_function(proc, moving_handled, pickup_handled) -> Callable[[bo
     proc_type = type(proc)
     if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
         return expand_moving
-    elif proc_type is procedures.Pickup and not pickup_handled:
+    elif proc_type is procedures.Pickup and not pickup_handled and proc.roll is None:
         return expand_pickup
     elif proc_type is procedures.Block and proc.roll is None:
         return expand_block
@@ -386,6 +389,8 @@ def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
     # noinspection PyTypeChecker
     active_proc: procedures.Pickup = game.get_procedure()
     assert type(active_proc) is procedures.Pickup
+    assert active_proc.roll is None
+
     probability_success = game.get_pickup_prob(active_proc.player, active_proc.ball.position)
 
     new_parent = ChanceNode(game, parent)
@@ -399,6 +404,7 @@ def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
     assert game.get_step() == new_parent.step_nbr
 
     # FAILURE SCENARIO
+    assert not active_proc.player.has_skill(Skill.SURE_HANDS), 'cant handle sure hands yet'
     with only_fixed_rolls(game, d6=[1]):
         game.step()
     fail_node = expand_none_action(game, new_parent, pickup_handled=True)
@@ -433,6 +439,9 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 
     p = np.array(rolls) / sum(rolls)
     index_of_failure = np.random.choice(range(len(rolls)), 1, p=p)[0]
+
+    if len(game.get_available_actions())>0:
+        raise AttributeError()
 
     # fix all rolls up until the failure, and step them
     for _ in range(index_of_failure):

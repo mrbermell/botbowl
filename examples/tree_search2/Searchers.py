@@ -2,6 +2,8 @@ from functools import partial
 from operator import attrgetter, itemgetter
 from typing import Tuple, Union, Optional, Callable, List
 import queue
+from collections import namedtuple
+
 
 import numpy as np
 from pytest import approx
@@ -47,10 +49,11 @@ def get_heuristic(game: botbowl.Game,
     return result
 
 
-gotebot_heuristic = partial(get_heuristic, coeff_score=1)#,
-                            #coeff_ball_x=0.05,
-                            #coeff_ball_marked=0.1,
-                            #coeff_ball_carried=0.2)
+gotebot_heuristic = partial(get_heuristic,
+                            coeff_score=1,
+                            coeff_ball_x=0.05,
+                            coeff_ball_marked=0.1,
+                            coeff_ball_carried=0.2)
 
 
 def get_best_action(node: Union[ChanceNode, ActionNode]) -> Tuple[Optional[botbowl.Action], float]:
@@ -66,6 +69,9 @@ def get_best_action(node: Union[ChanceNode, ActionNode]) -> Tuple[Optional[botbo
             action, value = max(((action, get_best_action(child)[1])
                                 for action, child in zip(node.explored_actions, node.children)), key=itemgetter(1))
             return action, value
+
+
+MCTS_Info = namedtuple('MCTS_Info', 'probabilities actions action_values visits heuristic reward state_value')
 
 
 Policy = Callable[[botbowl.Game], Tuple[float, np.ndarray, List[botbowl.Action]]]
@@ -86,30 +92,29 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
         return True
 
     def setup_node(new_node: ActionNode):
-        if 'probabilities' not in new_node.info:
+        if 'mcts' not in new_node.info:
             tree.set_game_to_node(new_node)
-            state_value, probabilities, actions = policy(tree.game)
-            action_values = np.zeros(len(probabilities))
-            visit_count = np.zeros(len(probabilities), dtype=np.int)
+            state_value, probabilities, actions_ = policy(tree.game)
 
-            heuristic = get_heuristic(tree.game) # todo: coefficients needed!
+            heuristic = gotebot_heuristic(tree.game) # todo: coefficients needed!
             reward = 0
             if new_node.parent is not None:
                 for parent in new_node.get_all_parents(include_self=False):
                     if isinstance(parent, ActionNode):
-                        reward = heuristic - parent.info['mcts'][4]
+                        reward = heuristic - parent.info['mcts'].reward
+                        break
 
-            new_node.info['mcts'] = (probabilities,
-                                     actions,
-                                     action_values,
-                                     visit_count,
-                                     heuristic,
-                                     reward,
-                                     state_value)
+            new_node.info['mcts'] = MCTS_Info(probabilities=probabilities,
+                                              actions=actions_,
+                                              action_values=np.zeros(len(probabilities)),
+                                              visits=np.zeros(len(probabilities), dtype=np.int),
+                                              heuristic=heuristic,
+                                              reward=reward,
+                                              state_value=state_value)
 
 
     def back_propagate(final_node: ActionNode):
-        propagated_value = final_node.info['state_value'] + final_node.reward
+        propagated_value = final_node.info['mcts'].state_value + final_node.info['mcts'].reward
 
         n = final_node
         while True:
@@ -117,8 +122,8 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
                 propagated_value *= n.parent.get_child_prob(n)
             elif isinstance(n.parent, ActionNode):
                 action_object = n.parent.get_child_action(n)
-                action_index = n.parent.info['actions'].index(action_object)
-                n.parent.info['action_values'][action_index] += propagated_value
+                action_index = n.parent.info['mcts'].actions.index(action_object)
+                n.parent.info['mcts'].action_values[action_index] += propagated_value
                 propagated_value += n.parent.reward
             else:
                 raise ValueError()
@@ -135,14 +140,12 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
         setup_node(node)
 
         # pick next action
-        probs = node.info['probabilities']
-        action_values = node.info['action_values']
-        visits = node.info['visit_count']
-        a_index = np.argmax(action_values + 0.25*probs/(1+visits))
-        visits[a_index] += 1  # increment visit count
+        mcts_info = node.info['mcts']
+        a_index = np.argmax(mcts_info.action_values/(1+mcts_info.visits) + 10*mcts_info.probabilities/(1+mcts_info.visits))
+        mcts_info.visits[a_index] += 1  # increment visit count
 
         # expand action and handle new nodes
-        action: botbowl.Action = node.info['actions'][a_index]
+        action: botbowl.Action = mcts_info.actions[a_index]
         if action not in node.explored_actions:
             tree.expand_action_node(node, action)
 

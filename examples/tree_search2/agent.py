@@ -1,6 +1,7 @@
 from copy import deepcopy
 from time import perf_counter
 
+import botbowl
 from SearchTree import SearchTree
 from botbowl import Game
 from botbowl.core.model import Agent
