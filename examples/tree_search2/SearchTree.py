@@ -103,12 +103,6 @@ class ActionNode(Node):
         child = self.children[self.explored_actions.index(action)]
         return get_action_node_children(child)
 
-    def __hash__(self):
-        return hash(self.simple_hash)
-
-    def __eq__(self, other):
-        #raise NotImplementedError()
-        return self is other
 
     @staticmethod
     def hash_game_state(game: botbowl.Game) -> str:
