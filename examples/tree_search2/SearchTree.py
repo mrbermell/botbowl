@@ -258,7 +258,7 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode
     assert game.trajectory.enabled
     game.config.fast_mode = False
 
-    with remove_randomness(game):
+    with only_fixed_rolls(game):
         game.step(action)
 
     return expand_none_action(game, parent)
@@ -311,11 +311,13 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
         expand_func = get_expanding_function(proc, moving_handled, pickup_handled)
 
         if expand_func is not None:
+            assert len(botbowl.D6.FixedRolls) == 0
             return_node = expand_func(game, parent)
+            assert len(botbowl.D6.FixedRolls) == 0
             game.revert(parent.step_nbr)
             return return_node
 
-        with remove_randomness(game):
+        with only_fixed_rolls(game):
             game.step()
 
     action_node = ActionNode(game, parent)
