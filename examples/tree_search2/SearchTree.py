@@ -6,12 +6,13 @@ from typing import Optional, Callable, List, Union, Iterable
 
 import more_itertools.more
 import numpy as np
-from more_itertools import collapse
+from more_itertools import collapse, first
 from pytest import approx
 
 import botbowl
 import botbowl.core.forward_model as forward_model
 import botbowl.core.procedure as procedures
+import botbowl.core.pathfinding.python_pathfinding as pf
 from botbowl import Skill, BBDieResult
 from tests.util import only_fixed_rolls
 from .hashmap import HashMap
@@ -282,6 +283,8 @@ def get_expanding_function(proc, moving_handled, pickup_handled) -> Callable[[bo
         return expand_catch
     elif proc_type is procedures.ThrowIn:
         return expand_throw_in
+    elif proc_type is procedures.PreKickoff:
+        return handle_ko_wakeup
     else:
         return None
 
@@ -416,15 +419,29 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     active_proc: Union[procedures.GFI, procedures.Dodge] = game.get_procedure()
     assert type(active_proc) is procedures.Dodge or type(active_proc) is procedures.GFI
 
-    procs = [proc for proc in reversed(game.state.stack.items) if isinstance(proc, procedures.MoveAction)]
-    assert len(procs) == 1
-    move_action_proc: procedures.MoveAction = procs[0]
+    move_action_proc: procedures.MoveAction = first(proc for proc in reversed(game.state.stack.items)
+                                                    if isinstance(proc, procedures.MoveAction))
+
+    player = move_action_proc.player
+
     if move_action_proc.steps is not None:
         final_step = move_action_proc.steps[-1]
     else:
         final_step = active_proc.position
 
     path = move_action_proc.paths[final_step]
+
+    squares_moved = player.state.moves-1
+    if path.steps[0] == player.state.squares_moved[0]:
+        # player stood up recently
+        squares_moved -= 2
+
+    if len(list(collapse(path.rolls[:squares_moved]))) > 0:
+        # need to recalculate path,
+        player.state.moves -= 1
+        path = pf.get_safest_path(game, player, final_step)
+        player.state.moves += 1
+
     probability_success = path.prob
     rolls = list(collapse(path.rolls))
 
@@ -436,28 +453,27 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     p = np.array(rolls) / sum(rolls)
     index_of_failure = np.random.choice(range(len(rolls)), 1, p=p)[0]
 
-    if len(game.get_available_actions())>0:
-        raise AttributeError()
-
     # fix all rolls up until the failure, and step them
-    for _ in range(index_of_failure):
-        botbowl.D6.fix(6)
-    while len(botbowl.D6.FixedRolls) > 0:
-        game.step()
+    with only_fixed_rolls(game, d6=[6]*index_of_failure):
+        while len(botbowl.D6.FixedRolls) > 0:
+            game.step()
 
     new_parent = ChanceNode(game, parent)
     debug_step_count = game.get_step()
 
     # SUCCESS SCENARIO
-    for _ in range(len(rolls) - index_of_failure):
-        botbowl.D6.fix(6)
+    with only_fixed_rolls(game, d6=[6]*(len(rolls) - index_of_failure)):
+        while len(botbowl.D6.FixedRolls) > 0:
+            game.step()
     success_node = expand_none_action(game, new_parent, moving_handled=True)
     new_parent.connect_child(success_node, probability_success)
 
     assert debug_step_count == game.get_step()
 
     # FAILURE SCENARIO
-    botbowl.D6.fix(1)
+    with only_fixed_rolls(game, d6=[1]):
+        while len(botbowl.D6.FixedRolls) > 0:
+            game.step()
     fail_node = expand_none_action(game, new_parent, moving_handled=True)
     new_parent.connect_child(fail_node, 1 - probability_success)
 
@@ -592,6 +608,22 @@ def expand_catch(game: botbowl.Game, parent: Node) -> Node:
         expand_with_fixes(game, new_parent, 1 - p_catch, d6=[1])
 
     return new_parent
+
+
+def handle_ko_wakeup(game: botbowl.Game, parent: Node) -> Node:
+    # noinspection PyTypeChecker
+    active_proc: procedures.PreKickoff = game.get_procedure()
+    assert type(active_proc) is procedures.PreKickoff
+
+    d6_fixes = [1]*len(game.get_knocked_out(active_proc.team))
+
+    with only_fixed_rolls(game, d6=d6_fixes):
+        while active_proc is game.get_procedure():
+            game.step()
+
+    assert active_proc is not game.get_procedure()
+
+    return expand_none_action(game, parent)
 
 
 def expand_with_fixes(game, parent, probability, **fixes):

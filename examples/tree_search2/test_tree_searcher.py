@@ -225,7 +225,7 @@ def test_mcts():
 
     tree = SearchTree(game)
     policy = MockPolicy()
-    for _ in range(100):
+    for i in range(100):
         do_mcts_branch(tree, policy)
 
     from more_itertools import first
