@@ -1,4 +1,4 @@
-from typing import Optional, Iterable, Protocol
+from typing import Optional, Iterable, Protocol, List, Dict
 
 
 class HasSimpleHash(Protocol):
@@ -6,7 +6,7 @@ class HasSimpleHash(Protocol):
 
 
 class HashMap:
-    data: dict[str, list[HasSimpleHash]]
+    data: Dict[str, List[HasSimpleHash]]
 
     def __init__(self, values: Optional[Iterable[HasSimpleHash]]=None):
         self.data = {}
