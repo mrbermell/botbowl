@@ -2,7 +2,7 @@ from abc import ABC
 from collections import Counter
 from copy import deepcopy
 from functools import partial
-from typing import Optional, Callable, List, Union, Iterable
+from typing import Optional, Callable, List, Union, Iterable, Any
 
 import more_itertools.more
 import numpy as np
@@ -55,7 +55,7 @@ class ActionNode(Node):
     team: botbowl.Team
     explored_actions: List[botbowl.Action]
     turn: int
-    info: dict  # Only purpose is to store information for users of SearchTree
+    info: Any  # Only purpose is to store information for users of SearchTree
     simple_hash: str
 
     def __init__(self, game: botbowl.Game, parent: Optional[Node], reward=0.0):
@@ -64,7 +64,7 @@ class ActionNode(Node):
         self.team = game.state.available_actions[0].team
         self.explored_actions = []
         self.turn = self.team.state.turn
-        self.info = {}
+        self.info = None
         self.simple_hash = ActionNode.hash_game_state(game)
 
         if parent is not None:
@@ -267,11 +267,11 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode
 
 def get_expanding_function(proc, moving_handled, pickup_handled) -> Callable[[botbowl.Game, Node], Node]:
     proc_type = type(proc)
-    if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
+    if proc_type in {procedures.Dodge, procedures.GFI} and proc.roll is None and not moving_handled:
         return expand_moving
     elif proc_type is procedures.Pickup and not pickup_handled and proc.roll is None:
         return expand_pickup
-    elif proc_type is procedures.Block and proc.roll is None:
+    elif proc_type is procedures.Block and proc.roll is None and proc.gfi is False:
         return expand_block
     elif proc_type is procedures.Armor:
         return expand_armor
@@ -311,6 +311,9 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
 
     while len(game.state.available_actions) == 0:
         proc = game.get_procedure()
+        if type(proc) is procedures.BlitzAction and proc.player.position == botbowl.Square(2, 2):
+            print("asdf")
+
         expand_func = get_expanding_function(proc, moving_handled, pickup_handled)
 
         if expand_func is not None:
@@ -429,6 +432,9 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     else:
         final_step = active_proc.position
 
+    if player.position == final_step:
+        raise ValueError()
+
     path = move_action_proc.paths[final_step]
 
     squares_moved = player.state.moves-1
@@ -450,6 +456,9 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         rolls.pop()
         probability_success /= game.get_pickup_prob(active_proc.player, final_step)
 
+    if len(rolls) == 0:
+        raise ValueError()
+
     p = np.array(rolls) / sum(rolls)
     index_of_failure = np.random.choice(range(len(rolls)), 1, p=p)[0]
 
@@ -464,6 +473,8 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     # SUCCESS SCENARIO
     with only_fixed_rolls(game, d6=[6]*(len(rolls) - index_of_failure)):
         while len(botbowl.D6.FixedRolls) > 0:
+            if type(game.get_procedure()) in {procedures.Armor}:
+                raise AttributeError("wrong")
             game.step()
     success_node = expand_none_action(game, new_parent, moving_handled=True)
     new_parent.connect_child(success_node, probability_success)

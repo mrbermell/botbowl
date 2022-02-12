@@ -1,9 +1,8 @@
-from functools import partial
-from operator import attrgetter, itemgetter
-from typing import Tuple, Union, Optional, Callable, List
 import queue
 from collections import namedtuple
-
+from operator import attrgetter, itemgetter
+from operator import attrgetter, itemgetter
+from typing import Tuple, Union, Optional, Callable, List
 
 import numpy as np
 from pytest import approx
@@ -11,26 +10,31 @@ from pytest import approx
 import botbowl
 from examples.tree_search2.SearchTree import SearchTree, ActionNode, ChanceNode
 
+NUM_HEURISTICS = 5
+gbg_heuristic_weights = np.array([1, # score
+                                  0, # tv on pitch
+                                  0.05, # ball position
+                                  0.2, # ball carried
+                                  0.1]) # ball marked
 
-def get_heuristic(game: botbowl.Game,
-                  coeff_score: float = 0,
-                  coeff_tv_on_pitch: float = 0,
-                  coeff_ball_x: float = 0,
-                  coeff_ball_marked: float = 0,
-                  coeff_ball_carried: float = 0) -> float:
-    """ heuristic based on game state, zero sum, calculated from home teams perspective """
-    result: float = 0.0
+def get_heuristic(game: botbowl.Game) -> np.ndarray:
+    """
+    Heuristic based on game state, calculated from home teams perspective
+    zero sum, meaning away team's heuristic is negative of home team's heuristic
+    :returns: array with different heuristics, multiply it with
+    """
+    result = np.zeros(NUM_HEURISTICS)
     home = game.state.home_team
     away = game.state.away_team
     ball = game.get_ball()
 
-    result += coeff_score * (home.state.score - away.state.score)
+    result[0] = home.state.score - away.state.score
 
-    result += coeff_tv_on_pitch * sum(map(attrgetter('role.cost'), game.get_players_on_pitch(team=home)))
-    result -= coeff_tv_on_pitch * sum(map(attrgetter('role.cost'), game.get_players_on_pitch(team=away)))
+    result[1] += sum(map(attrgetter('role.cost'), game.get_players_on_pitch(team=home)))
+    result[1] -= sum(map(attrgetter('role.cost'), game.get_players_on_pitch(team=away)))
 
     if ball is not None and ball.position is not None:
-        result -= coeff_ball_x * ball.position.x  # negative because home team scores at x = 0
+        result[2] -= ball.position.x  # negative because home team scores at x = 0
 
         home_marking_ball = len(game.get_adjacent_players(ball.position, team=home, standing=True)) > 0
         away_marking_ball = len(game.get_adjacent_players(ball.position, team=away, standing=True)) > 0
@@ -38,22 +42,15 @@ def get_heuristic(game: botbowl.Game,
         if ball.is_carried:
             ball_carrier = game.get_player_at(ball.position)
             if ball_carrier.team == home:
-                result += coeff_ball_carried
-                result -= coeff_ball_marked * away_marking_ball
+                result[3] += 1
+                result[4] -= away_marking_ball
             elif ball_carrier.team == away:
-                result -= coeff_ball_carried
-                result += coeff_ball_marked * home_marking_ball
+                result[3] -= 1
+                result[4] += home_marking_ball
         else:
-            result += coeff_ball_marked * (home_marking_ball - away_marking_ball)
+            result[4] += (home_marking_ball - away_marking_ball)
 
     return result
-
-
-gotebot_heuristic = partial(get_heuristic,
-                            coeff_score=1,
-                            coeff_ball_x=0.05,
-                            coeff_ball_marked=0.1,
-                            coeff_ball_carried=0.2)
 
 
 def get_best_action(node: Union[ChanceNode, ActionNode]) -> Tuple[Optional[botbowl.Action], float]:
@@ -92,29 +89,35 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
         return True
 
     def setup_node(new_node: ActionNode):
-        if 'mcts' not in new_node.info:
+        if type(new_node.info) is not MCTS_Info:
             tree.set_game_to_node(new_node)
-            state_value, probabilities, actions_ = policy(tree.game)
+            _, probabilities, actions_ = policy(tree.game)
+            num_actions = len(actions_)
 
-            heuristic = gotebot_heuristic(tree.game) # todo: coefficients needed!
-            reward = 0
+            heuristic = get_heuristic(tree.game)
+
+            reward = np.zeros(NUM_HEURISTICS)
             if new_node.parent is not None:
                 for parent in new_node.get_all_parents(include_self=False):
                     if isinstance(parent, ActionNode):
-                        reward = heuristic - parent.info['mcts'].reward
+                        reward = heuristic - parent.info.reward
                         break
 
-            new_node.info['mcts'] = MCTS_Info(probabilities=probabilities,
-                                              actions=actions_,
-                                              action_values=np.zeros(len(probabilities)),
-                                              visits=np.zeros(len(probabilities), dtype=np.int),
-                                              heuristic=heuristic,
-                                              reward=reward,
-                                              state_value=state_value)
+            assert len(reward) == NUM_HEURISTICS
+            assert len(heuristic) == NUM_HEURISTICS
+
+            new_node.info= MCTS_Info(probabilities=probabilities,
+                                     actions=actions_,
+                                     action_values=np.zeros((num_actions, NUM_HEURISTICS)),
+                                     visits=np.zeros(len(probabilities), dtype=np.int),
+                                     heuristic=heuristic,
+                                     reward=reward,
+                                     state_value=None)
 
 
     def back_propagate(final_node: ActionNode):
-        propagated_value = final_node.info['mcts'].state_value + final_node.info['mcts'].reward
+        #propagated_value = final_node.info.state_value + final_node.info.reward
+        propagated_value = final_node.info.reward
 
         n = final_node
         while True:
@@ -122,11 +125,13 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
                 propagated_value *= n.parent.get_child_prob(n)
             elif isinstance(n.parent, ActionNode):
                 action_object = n.parent.get_child_action(n)
-                action_index = n.parent.info['mcts'].actions.index(action_object)
-                n.parent.info['mcts'].action_values[action_index] += propagated_value
+                action_index = n.parent.info.actions.index(action_object)
+                n.parent.info.action_values[action_index] += propagated_value
                 propagated_value += n.parent.reward
             else:
                 raise ValueError()
+
+            assert len(propagated_value) == NUM_HEURISTICS
 
             if n.parent is tree.root_node:
                 break
@@ -140,13 +145,17 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
         setup_node(node)
 
         # pick next action
-        mcts_info = node.info['mcts']
-        a_index = np.argmax(mcts_info.action_values/(1+mcts_info.visits) + 10*mcts_info.probabilities/(1+mcts_info.visits))
+        mcts_info = node.info
+        weighted_action_vals = np.matmul(mcts_info.action_values, gbg_heuristic_weights)
+        visits = mcts_info.visits + (mcts_info.visits==0)
+        a_index = np.argmax(weighted_action_vals/visits + 10*mcts_info.probabilities/visits)
         mcts_info.visits[a_index] += 1  # increment visit count
 
         # expand action and handle new nodes
         action: botbowl.Action = mcts_info.actions[a_index]
         if action not in node.explored_actions:
+            if action.action_type is botbowl.ActionType.BLOCK and action.position.x == 1 and action.position.y == 1:
+                print("")
             tree.expand_action_node(node, action)
 
         for child_node in node.get_children_from_action(action):

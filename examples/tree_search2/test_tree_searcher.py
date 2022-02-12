@@ -1,18 +1,15 @@
+from copy import deepcopy
 from random import randint
 
 import pytest
 from pytest import approx
 
-from examples.tree_search2.Searchers import gotebot_heuristic, get_best_action, get_heuristic, do_mcts_branch
-from tests.util import get_custom_game_turn, only_fixed_rolls
+from botbowl import Square, Action, ActionType, Skill, BBDieResult
+from examples.tree_search2.Samplers import ActionSampler, MockPolicy
 from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree, \
     get_action_node_children
-from examples.tree_search2.Samplers import ActionSampler, MockPolicy
-import botbowl
-from botbowl import Square, Action, ActionType, Skill, BBDieResult
-from copy import deepcopy
-
-# import numpy as np
+from examples.tree_search2.Searchers import get_best_action, get_heuristic, do_mcts_branch
+from tests.util import get_custom_game_turn, only_fixed_rolls
 
 
 @pytest.mark.parametrize("data", [(Square(2, 2), [1.0]),
@@ -244,3 +241,6 @@ def test_mcts():
     for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
         action.player = None
         print(f"{action}, {visits=}, {action_val=}")
+
+    print("")
+    print(f"{len(tree.all_action_nodes)=}")
