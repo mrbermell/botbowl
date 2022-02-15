@@ -267,7 +267,7 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode
 
 def get_expanding_function(proc, moving_handled, pickup_handled) -> Callable[[botbowl.Game, Node], Node]:
     proc_type = type(proc)
-    if proc_type in {procedures.Dodge, procedures.GFI} and proc.roll is None and not moving_handled:
+    if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
         return expand_moving
     elif proc_type is procedures.Pickup and not pickup_handled and proc.roll is None:
         return expand_pickup
@@ -311,9 +311,6 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
 
     while len(game.state.available_actions) == 0:
         proc = game.get_procedure()
-        if type(proc) is procedures.BlitzAction and proc.player.position == botbowl.Square(2, 2):
-            print("asdf")
-
         expand_func = get_expanding_function(proc, moving_handled, pickup_handled)
 
         if expand_func is not None:
@@ -424,7 +421,6 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 
     move_action_proc: procedures.MoveAction = first(proc for proc in reversed(game.state.stack.items)
                                                     if isinstance(proc, procedures.MoveAction))
-
     player = move_action_proc.player
 
     if move_action_proc.steps is not None:
@@ -432,8 +428,26 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     else:
         final_step = active_proc.position
 
+    is_rerolled = False
+    if active_proc.roll is not None:
+        is_rerolled = True
+        with only_fixed_rolls(game):
+            game.step()
+
+        new_proc = game.get_procedure()
+        if type(new_proc) not in {procedures.GFI, procedures.Dodge}:
+            assert not active_proc.reroll.use_reroll
+            return expand_none_action(game, parent)
+        assert new_proc is active_proc
+        assert active_proc.roll is None
+        assert active_proc.reroll is None
+
+        assert False
+        # todo, handle the USE_REROLL action!
+
+    use_path_anyway = False
     if player.position == final_step:
-        raise ValueError()
+        use_path_anyway = True
 
     path = move_action_proc.paths[final_step]
 
@@ -442,7 +456,7 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         # player stood up recently
         squares_moved -= 2
 
-    if len(list(collapse(path.rolls[:squares_moved]))) > 0:
+    if (not use_path_anyway) and len(list(collapse(path.rolls[:squares_moved]))) > 0:
         # need to recalculate path,
         player.state.moves -= 1
         path = pf.get_safest_path(game, player, final_step)
@@ -474,6 +488,8 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     with only_fixed_rolls(game, d6=[6]*(len(rolls) - index_of_failure)):
         while len(botbowl.D6.FixedRolls) > 0:
             if type(game.get_procedure()) in {procedures.Armor}:
+                raise AttributeError("wrong")
+            if len(game.get_available_actions())>0:
                 raise AttributeError("wrong")
             game.step()
     success_node = expand_none_action(game, new_parent, moving_handled=True)
