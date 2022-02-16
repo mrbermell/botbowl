@@ -222,7 +222,7 @@ def test_mcts():
 
     tree = SearchTree(game)
     policy = MockPolicy()
-    for i in range(100):
+    for i in range(20):
         do_mcts_branch(tree, policy)
 
     from more_itertools import first
@@ -237,7 +237,7 @@ def test_mcts():
 
 
     print("")
-    mcts_info = tree.root_node.info['mcts']
+    mcts_info = tree.root_node.info
     for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
         action.player = None
         print(f"{action}, {visits=}, {action_val=}")

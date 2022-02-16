@@ -1,7 +1,9 @@
+import itertools
+import operator
 from abc import ABC
 from collections import Counter
 from copy import deepcopy
-from functools import partial
+from functools import partial, reduce
 from typing import Optional, Callable, List, Union, Iterable, Any
 
 import more_itertools.more
@@ -36,9 +38,7 @@ class Node(ABC):
         self.change_log = game.trajectory.action_log[parent.step_nbr:] if parent is not None else []
         self.top_proc = str(game.get_procedure())
 
-        #if parent is not None and len(self.change_log) == 0:
-        #    raise AttributeError()
-        #assert parent is None or len(self.change_log) > 0
+        assert parent is None or len(self.change_log) > 0
 
     def _connect_child(self, child_node: 'Node'):
         assert child_node.parent is self
@@ -428,55 +428,75 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     else:
         final_step = active_proc.position
 
-    is_rerolled = False
-    if active_proc.roll is not None:
-        is_rerolled = True
+    path = move_action_proc.paths[final_step]
+
+    """
+    This block of code sets two important variables: 
+        probability_success - probability of the remaining path  
+        rolls - list[int] - the remaining rolls of the path 
+    Normal case we just fetch this from the path object. If we're in a rerolled proc, it's nasty... 
+    """
+    if active_proc.roll is None:
+        probability_success = path.prob
+        rolls = list(collapse(path.rolls))
+    else:
         with only_fixed_rolls(game):
             game.step()
+
+        debug_step_count2 = game.get_step()
 
         new_proc = game.get_procedure()
         if type(new_proc) not in {procedures.GFI, procedures.Dodge}:
             assert not active_proc.reroll.use_reroll
             return expand_none_action(game, parent)
+
+        # if we get here, it means that a reroll was used.
         assert new_proc is active_proc
         assert active_proc.roll is None
         assert active_proc.reroll is None
 
-        assert False
-        # todo, handle the USE_REROLL action!
+        current_step = active_proc.position
+        assert player.position.distance(current_step) == 1
 
-    use_path_anyway = False
-    if player.position == final_step:
-        use_path_anyway = True
+        i = 0
+        while path.steps[i] != current_step:
+            i += 1
 
-    path = move_action_proc.paths[final_step]
+        num_current_step_remaining_rolls = len(list(filter(lambda x: type(x) in {procedures.GFI, procedures.Dodge}, game.state.stack.items)))
+        assert num_current_step_remaining_rolls in [1, 2]
+        remaining_current_step_rolls = path.rolls[i][-num_current_step_remaining_rolls:]
 
-    squares_moved = player.state.moves-1
-    if path.steps[0] == player.state.squares_moved[0]:
-        # player stood up recently
-        squares_moved -= 2
+        probability_success = reduce(operator.mul, map(lambda d: (7-d)/6, remaining_current_step_rolls), 1.0)
+        rolls = list(collapse(remaining_current_step_rolls))
 
-    if (not use_path_anyway) and len(list(collapse(path.rolls[:squares_moved]))) > 0:
-        # need to recalculate path,
-        player.state.moves -= 1
-        path = pf.get_safest_path(game, player, final_step)
-        player.state.moves += 1
+        if current_step != final_step:
+            try:
+                new_path = pf.get_safest_path(game, player, final_step, from_position=current_step, num_moves_used=player.state.moves)
 
-    probability_success = path.prob
-    rolls = list(collapse(path.rolls))
+                assert new_path.steps == path.steps[-len(new_path):]
+                assert new_path.rolls == path.rolls[-len(new_path):]
+            except AttributeError as e:
+                raise e
+            except AssertionError as e:
+                raise e
+            except IndexError as e:
+                raise e
+
+            rolls.extend(collapse(new_path.rolls))
+            probability_success *= new_path.prob
+
+            game.revert(debug_step_count2)
+
 
     if game.get_ball().position == final_step:
         # remove the pickup roll and probability
         rolls.pop()
         probability_success /= game.get_pickup_prob(active_proc.player, final_step)
 
-    if len(rolls) == 0:
-        raise ValueError()
-
     p = np.array(rolls) / sum(rolls)
     index_of_failure = np.random.choice(range(len(rolls)), 1, p=p)[0]
 
-    # fix all rolls up until the failure, and step them
+    # STEP UNTIL FAILURE (possibly no steps at all)
     with only_fixed_rolls(game, d6=[6]*index_of_failure):
         while len(botbowl.D6.FixedRolls) > 0:
             game.step()
@@ -500,6 +520,8 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     # FAILURE SCENARIO
     with only_fixed_rolls(game, d6=[1]):
         while len(botbowl.D6.FixedRolls) > 0:
+            if len(game.get_available_actions())>0:
+                raise AttributeError("wrong")
             game.step()
     fail_node = expand_none_action(game, new_parent, moving_handled=True)
     new_parent.connect_child(fail_node, 1 - probability_success)
