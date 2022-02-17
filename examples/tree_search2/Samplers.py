@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from random import shuffle
-from typing import Optional, List, Iterable, Tuple
+from typing import Optional, List, Iterable, Tuple, Callable, Dict
 
 import numpy as np
 from more_itertools import collapse
@@ -136,12 +136,15 @@ def scripted_action(game: botbowl.Game) -> Optional[Action]:
 
 
 class MockPolicy:
+    ActionProbList = List[Tuple[Action, float]]
+
     def __init__(self):
         self.env_conf = EnvConf()
         self.positional_types = set(self.env_conf.positional_action_types)
         self.simple_types = set(self.env_conf.simple_action_types)
 
-        self.convert_function = {ActionType.MOVE: self.move_actions,
+        self.convert_function: Dict[ActionType, Callable[[botbowl.Game], MockPolicy.ActionProbList]] = {
+                                 ActionType.MOVE: self.move_actions,
                                  ActionType.START_HANDOFF: self.start_handoff_actions,
                                  #ActionType.START_BLITZ: self.move_actions,
                                  #ActionType.START_BLITZ: self.move_actions,
@@ -153,29 +156,54 @@ class MockPolicy:
         self.player_actiontypes_without_move_actions = {botbowl.core.table.PlayerActionType.HANDOFF,
                                                         botbowl.core.table.PlayerActionType.BLITZ}
 
-    def start_handoff_actions(self, game: botbowl.Game, action_choice):
+    def start_handoff_actions(self, game: botbowl.Game, action_choice) -> ActionProbList:
         ball = game.get_ball()
         if ball is not None and ball.is_carried:
             if ball.position in action_choice.positions:
-                return [Action(ActionType.START_HANDOFF, position=[ball.position])]
+                return [(Action(ActionType.START_HANDOFF, position=[ball.position]), 1)]
         return []
 
-    def move_actions(self, game: botbowl.Game, action_choice) -> Iterable[Action]:
+    def move_actions(self, game: botbowl.Game, action_choice) -> ActionProbList:
         if game.get_player_action_type() in self.player_actiontypes_without_move_actions:
             return []
 
         if game.get_active_player().state.moves > 0:
             return []
 
-        return [Action(ActionType.MOVE, position=pos) for pos in action_choice.positions]
+        action_probs = []
+        ball = game.get_ball()
+
+        ball_on_floor_pos = game.get_ball().position if not ball.is_carried else None
+        ball_carrier = game.get_ball_carrier()
+        opp_ball_carrier = ball_carrier if ball_carrier is not None and ball_carrier.team is not game.active_team else None
+
+        is_ball_carrier = game.get_active_player() is game.get_ball_carrier()
+        is_home = game.get_active_player().team is game.state.home_team
+
+        for pos in action_choice.positions:
+            prob = 1
+            if ball_on_floor_pos is not None:
+                if pos == ball_on_floor_pos:
+                    prob = 3
+                elif pos.distance(ball_on_floor_pos) == 1:
+                    prob = 2
+            elif opp_ball_carrier is not None and pos.distance(opp_ball_carrier.position):
+                prob = 2
+
+            elif is_ball_carrier and pos in game.arena.is_in_opp_endzone(pos, is_home):
+                prob = 2
+
+            action = Action(ActionType.MOVE, position=pos)
+            action_probs.append((action, prob))
+
+        return action_probs
 
     def __call__(self, game: botbowl.Game) -> Tuple[float, np.ndarray, List[botbowl.Action]]:
         action = scripted_action(game)
         if action is not None:
             return 0.0, np.array([1.0]), [action]
 
-
-        actions: List[botbowl.Action] = []
+        actions: MockPolicy.ActionProbList = []
 
         if self.end_setup:
             self.end_setup = False
@@ -194,19 +222,22 @@ class MockPolicy:
                     positions = [p.position for p in action_choice.players]
 
                 for pos in positions:
-                    actions.append(Action(action_type, position=pos))
+                    actions.append((Action(action_type, position=pos), 1))
 
             elif action_choice.action_type in self.simple_types:
-                actions.append(Action(action_type))
+                actions.append((Action(action_type), 1))
 
             elif type(game.get_procedure()) is Setup and action_type not in {ActionType.END_SETUP, ActionType.PLACE_PLAYER}:
-                actions.append(Action(action_type))
+                actions.append((Action(action_type), 1))
                 self.end_setup = True
 
-        probabilities = np.ones(len(actions))/len(actions)
-        #assert abs(np.sum(probabilities) - 1.0) < 0.00001
+        action_objects, probabilities = zip(*actions)
+        probabilities = np.array(probabilities, dtype=np.float)
+        probabilities += 0.001*np.random.random(len(probabilities))
+        probabilities /= sum(probabilities)
 
-        return 0.0, probabilities, actions
+        return 0.0, probabilities, action_objects
+
 
 def main():
     policy = MockPolicy()
