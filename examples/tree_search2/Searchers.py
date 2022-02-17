@@ -1,6 +1,5 @@
 import queue
-from collections import namedtuple
-from operator import attrgetter, itemgetter
+from functools import partial
 from operator import attrgetter, itemgetter
 from typing import Tuple, Union, Optional, Callable, List
 
@@ -8,33 +7,36 @@ import numpy as np
 from pytest import approx
 
 import botbowl
-from examples.tree_search2.SearchTree import SearchTree, ActionNode, ChanceNode
+from examples.tree_search2.SearchTree import SearchTree, ActionNode, ChanceNode, Node
+from collections import namedtuple
 
-NUM_HEURISTICS = 5
-gbg_heuristic_weights = np.array([1, # score
-                                  0, # tv on pitch
-                                  0.05, # ball position
-                                  0.2, # ball carried
-                                  0.1]) # ball marked
 
-def get_heuristic(game: botbowl.Game) -> np.ndarray:
+HeuristicVector = namedtuple('HeuristicVector', ['score',
+                                                 'tv_on_pitch',
+                                                 'ball_position',
+                                                 'ball_carried',
+                                                 'ball_marked'])
+
+
+def get_heuristic(game: botbowl.Game) -> HeuristicVector:
     """
     Heuristic based on game state, calculated from home teams perspective
     zero sum, meaning away team's heuristic is negative of home team's heuristic
     :returns: array with different heuristics, multiply it with
     """
-    result = np.zeros(NUM_HEURISTICS)
+    score, tv_on_pitch, ball_position, ball_carried, ball_marked = 0.0, 0.0, 0.0, 0.0, 0.0
     home = game.state.home_team
     away = game.state.away_team
+
+    score += home.state.score - away.state.score
+
+    tv_on_pitch += sum(p.role.cost for p in game.get_players_on_pitch(team=home))
+    tv_on_pitch -= sum(p.role.cost for p in game.get_players_on_pitch(team=away))
+    tv_on_pitch /= 50000.0  # normalized to cost of lineman
+
     ball = game.get_ball()
-
-    result[0] = home.state.score - away.state.score
-
-    result[1] += sum(map(attrgetter('role.cost'), game.get_players_on_pitch(team=home)))
-    result[1] -= sum(map(attrgetter('role.cost'), game.get_players_on_pitch(team=away)))
-
     if ball is not None and ball.position is not None:
-        result[2] -= ball.position.x  # negative because home team scores at x = 0
+        ball_position -= ball.position.x  # negative because home team scores at x = 0
 
         home_marking_ball = len(game.get_adjacent_players(ball.position, team=home, standing=True)) > 0
         away_marking_ball = len(game.get_adjacent_players(ball.position, team=away, standing=True)) > 0
@@ -42,37 +44,27 @@ def get_heuristic(game: botbowl.Game) -> np.ndarray:
         if ball.is_carried:
             ball_carrier = game.get_player_at(ball.position)
             if ball_carrier.team == home:
-                result[3] += 1
-                result[4] -= away_marking_ball
+                ball_carried += 1
+                ball_marked -= away_marking_ball
             elif ball_carrier.team == away:
-                result[3] -= 1
-                result[4] += home_marking_ball
+                ball_carried -= 1
+                ball_marked += home_marking_ball
         else:
-            result[4] += (home_marking_ball - away_marking_ball)
+            ball_marked += (home_marking_ball - away_marking_ball)
 
-    return result
-
-
-def get_best_action(node: Union[ChanceNode, ActionNode]) -> Tuple[Optional[botbowl.Action], float]:
-    if type(node) is ChanceNode:
-        assert sum(node.child_probability) == approx(1.0, abs=1e-9), f"{node} {sum(node.child_probability)=} should be 1.0"
-        return None, sum( prob * get_best_action(child)[1] for prob, child in zip(node.child_probability, node.children))
-
-    elif type(node) is ActionNode:
-        if len(node.children) == 0:
-            return None, node.info['value']
-        else:
-            assert len(node.children) == len(node.explored_actions)
-            action, value = max(((action, get_best_action(child)[1])
-                                for action, child in zip(node.explored_actions, node.children)), key=itemgetter(1))
-            return action, value
+    return HeuristicVector(score=score,
+                           tv_on_pitch=tv_on_pitch,
+                           ball_position=ball_position,
+                           ball_carried=ball_carried,
+                           ball_marked=ball_marked)
 
 
 MCTS_Info = namedtuple('MCTS_Info', 'probabilities actions action_values visits heuristic reward state_value')
-
-
 Policy = Callable[[botbowl.Game], Tuple[float, np.ndarray, List[botbowl.Action]]]
-def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
+
+
+def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, exploration_coeff=1) -> None:
+    weights = np.array(weights)
     tree.set_game_to_node(tree.root_node)
     game = tree.game
 
@@ -94,25 +86,24 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
             _, probabilities, actions_ = policy(tree.game)
             num_actions = len(actions_)
 
-            heuristic = get_heuristic(tree.game)
+            heuristic = np.array(get_heuristic(tree.game))
 
-            reward = np.zeros(NUM_HEURISTICS)
+            reward = np.zeros(shape=heuristic.shape)
+
             if new_node.parent is not None:
                 for parent in new_node.get_all_parents(include_self=False):
                     if isinstance(parent, ActionNode):
                         reward = heuristic - parent.info.reward
                         break
 
-            assert len(reward) == NUM_HEURISTICS
-            assert len(heuristic) == NUM_HEURISTICS
 
             new_node.info= MCTS_Info(probabilities=probabilities,
                                      actions=actions_,
-                                     action_values=np.zeros((num_actions, NUM_HEURISTICS)),
-                                     visits=np.zeros(len(probabilities), dtype=np.int),
+                                     action_values=np.zeros((num_actions, len(reward))),
+                                     visits=np.zeros(num_actions, dtype=np.int),
                                      heuristic=heuristic,
                                      reward=reward,
-                                     state_value=None)
+                                     state_value=0)
 
 
     def back_propagate(final_node: ActionNode):
@@ -131,8 +122,6 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
             else:
                 raise ValueError()
 
-            assert len(propagated_value) == NUM_HEURISTICS
-
             if n.parent is tree.root_node:
                 break
             n = n.parent
@@ -146,9 +135,9 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
 
         # pick next action
         mcts_info = node.info
-        weighted_action_vals = np.matmul(mcts_info.action_values, gbg_heuristic_weights)
+        weighted_action_vals = np.matmul(mcts_info.action_values, weights)
         visits = mcts_info.visits + (mcts_info.visits==0)
-        a_index = np.argmax(weighted_action_vals/visits + 10*mcts_info.probabilities/visits)
+        a_index = np.argmax(weighted_action_vals/visits + exploration_coeff * mcts_info.probabilities/visits)
         mcts_info.visits[a_index] += 1  # increment visit count
 
         # expand action and handle new nodes
@@ -165,4 +154,42 @@ def do_mcts_branch(tree: SearchTree, policy: Policy) -> None:
             else:
                 # backpropagation!
                 back_propagate(child_node)
+
+
+def get_node_value(node: Union[Node, ActionNode, ChanceNode], weights: HeuristicVector) -> float:
+    recursive_self = partial(get_node_value, weights=weights)
+
+    if isinstance(node, ActionNode):
+        reward = np.dot(node.info.reward, weights)
+        if len(node.children) == 0:
+            return node.info.state_value + reward
+        elif node.is_home:
+            return max(map(recursive_self, node.children))
+        else:  # not node.is_home:
+            return min(map(recursive_self, node.children))
+    elif isinstance(node, ChanceNode):
+        assert sum(node.child_probability) == approx(1.0, abs=1e-9)
+        return sum(prob * recursive_self(child) for prob, child in zip(node.child_probability, node.children))
+    else:
+        raise ValueError()
+
+
+def get_best_action(root_node: ActionNode, weights: HeuristicVector) -> botbowl.Action:
+    assert len(root_node.children) == len(root_node.explored_actions)
+
+    child_node_values = (get_node_value(node, weights) for node in root_node.children)
+
+    if root_node.is_home:
+        action_index = np.argmax(child_node_values)
+    else:
+        action_index = np.argmin(child_node_values)
+
+    return root_node.explored_actions[action_index]
+
+
+
+
+
+
+
 

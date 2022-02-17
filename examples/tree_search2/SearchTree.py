@@ -50,10 +50,9 @@ class Node(ABC):
 
 
 class ActionNode(Node):
-    reward: float
-    value: float
     team: botbowl.Team
     explored_actions: List[botbowl.Action]
+    is_home: bool
     turn: int
     info: Any  # Only purpose is to store information for users of SearchTree
     simple_hash: str
@@ -62,15 +61,13 @@ class ActionNode(Node):
         super().__init__(game, parent)
         self.reward = reward
         self.team = game.state.available_actions[0].team
+        self.is_home = game.active_team is game.state.home_team
+        assert self.is_home or game.active_team is game.state.away_team
+
         self.explored_actions = []
-        self.turn = self.team.state.turn
+        self.turn = game.active_team.state.turn
         self.info = None
         self.simple_hash = ActionNode.hash_game_state(game)
-
-        if parent is not None:
-            node: ActionNode = parent
-            while type(node) != type(self):
-                node = node.parent
 
     @property
     def depth(self):

@@ -1,6 +1,7 @@
 from copy import deepcopy
 from random import randint
 
+import numpy as np
 import pytest
 from pytest import approx
 
@@ -8,8 +9,13 @@ from botbowl import Square, Action, ActionType, Skill, BBDieResult
 from examples.tree_search2.Samplers import ActionSampler, MockPolicy
 from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree, \
     get_action_node_children
-from examples.tree_search2.Searchers import get_best_action, get_heuristic, do_mcts_branch
+from examples.tree_search2.Searchers import get_best_action, get_heuristic, do_mcts_branch, HeuristicVector, \
+    get_node_value
 from tests.util import get_custom_game_turn, only_fixed_rolls
+
+
+default_weights = HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
+
 
 
 @pytest.mark.parametrize("data", [(Square(2, 2), [1.0]),
@@ -92,27 +98,16 @@ def test_dodge_pickup_score():
                                    forward_model_enabled=True,
                                    pathfinding_enabled=True)
 
-    def on_every_action_node(search_tree: SearchTree, node):
-        search_tree.set_game_to_node(node)
-        node.info['action_sampler'] = ActionSampler(search_tree.game)
-        node.info['value'] = get_heuristic(search_tree.game, coeff_score=1.0)
+    weights = HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0, tv_on_pitch=0)
 
-    tree = SearchTree(game, on_every_action_node)
+    tree = SearchTree(game)
+    policy = MockPolicy()
+    for i in range(200):
+        do_mcts_branch(tree, policy, weights, exploration_coeff=5)
 
-    def filter_func(node):
-        return node.depth < 3 and len(node.info['action_sampler']) > 0
-
-    for _ in range(100):
-        possible_nodes = list(filter(filter_func, tree.all_action_nodes))
-        node_to_explore = possible_nodes[randint(0, len(possible_nodes)-1)]
-
-        action = node_to_explore.info['action_sampler'].get_action()
-        assert action is not None
-        tree.expand_action_node(node_to_explore, action)
-
-    tree.set_game_to_node(tree.root_node)
-    best_action, value = get_best_action(tree.root_node)
-    assert value == approx((4/6)**2)  # corresponding to 3+, 3+ w/o rerolls
+    value = max(get_node_value(node, weights) for node in tree.root_node.children)
+    # best_action, value = get_best_action(tree.root_node)
+    assert value == approx((4 / 6) ** 2)  # corresponding to 3+, 3+ w/o rerolls
 
 
 def test_expand_block():
@@ -137,6 +132,7 @@ def test_expand_block():
     next_node, *_ = tree.expand_action_node(next_node, Action(ActionType.FOLLOW_UP, position=Square(6, 6)))
 
     assert len(tree.all_action_nodes) == 11
+
 
 def test_expand_throw_in():
     game, (attacker, defender) = get_custom_game_turn(player_positions=[(5, 2)],
@@ -172,7 +168,6 @@ def test_set_new_root():
 
     tree = SearchTree(deepcopy(game))
     assert tree.root_node.depth == 0
-
 
     # Move player 2
     new_node, = tree.expand_action_node(tree.root_node, action_p2_1)
@@ -216,31 +211,23 @@ def test_set_new_root():
 
 def test_mcts():
     game, _ = get_custom_game_turn(player_positions=[(6, 6), (7, 7)],
-                                opp_player_positions=[(5, 6)],
-                                ball_position=(6, 6),
-                                pathfinding_enabled=True)
+                                   opp_player_positions=[(5, 6)],
+                                   ball_position=(6, 6),
+                                   pathfinding_enabled=True)
+
+    weights = HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
 
     tree = SearchTree(game)
     policy = MockPolicy()
     for i in range(20):
-        do_mcts_branch(tree, policy)
-
-    from more_itertools import first
-    setup_node_name = first(filter(lambda s: s.find('Setup')>0,  tree.all_action_nodes.data))
-    setup_node: ActionNode = tree.all_action_nodes.data[setup_node_name][0]
-    chance_node = setup_node.parent
-    assert isinstance(chance_node, ChanceNode)
-
-    action_children = list(get_action_node_children(chance_node))
-    assert len(action_children) > 0
-    assert len(action_children) > 1
-
+        do_mcts_branch(tree, policy, weights, exploration_coeff=5)
 
     print("")
     mcts_info = tree.root_node.info
     for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
         action.player = None
-        print(f"{action}, {visits=}, {action_val=}")
+        action_value = np.dot(action_val, weights)
+        print(f"{action}, {visits=}, {action_value=:.2f}")
 
     print("")
     print(f"{len(tree.all_action_nodes)=}")
