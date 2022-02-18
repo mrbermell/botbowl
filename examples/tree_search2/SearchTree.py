@@ -425,6 +425,7 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     else:
         final_step = active_proc.position
 
+    is_pickup = game.get_ball().position == final_step
     path = move_action_proc.paths[final_step]
 
     """
@@ -436,11 +437,14 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     if active_proc.roll is None:
         probability_success = path.prob
         rolls = list(collapse(path.rolls))
+        if is_pickup:
+            # remove the pickup roll and probability
+            rolls.pop()
+            probability_success /= game.get_pickup_prob(active_proc.player, final_step)
+
     else:
         with only_fixed_rolls(game):
             game.step()
-
-        debug_step_count2 = game.get_step()
 
         new_proc = game.get_procedure()
         if type(new_proc) not in {procedures.GFI, procedures.Dodge}:
@@ -458,17 +462,23 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         i = 0
         while path.steps[i] != current_step:
             i += 1
+        remaining_current_step_rolls = path.rolls[i][:]
+
+        if is_pickup and current_step == final_step:
+            remaining_current_step_rolls.pop()
 
         num_current_step_remaining_rolls = len(list(filter(lambda x: type(x) in {procedures.GFI, procedures.Dodge}, game.state.stack.items)))
         assert num_current_step_remaining_rolls in [1, 2]
-        remaining_current_step_rolls = path.rolls[i][-num_current_step_remaining_rolls:]
+        remaining_current_step_rolls = remaining_current_step_rolls[-num_current_step_remaining_rolls:]
 
         probability_success = reduce(operator.mul, map(lambda d: (7-d)/6, remaining_current_step_rolls), 1.0)
         rolls = list(collapse(remaining_current_step_rolls))
 
         if current_step != final_step:
             try:
+                debug_step_count2 = game.get_step()
                 new_path = pf.get_safest_path(game, player, final_step, from_position=current_step, num_moves_used=player.state.moves)
+                game.revert(debug_step_count2)
 
                 assert new_path.steps == path.steps[-len(new_path):]
                 assert new_path.rolls == path.rolls[-len(new_path):]
@@ -482,13 +492,13 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
             rolls.extend(collapse(new_path.rolls))
             probability_success *= new_path.prob
 
-            game.revert(debug_step_count2)
+            if is_pickup:
+                # remove the pickup roll and probability
+                rolls.pop()
+                probability_success /= game.get_pickup_prob(active_proc.player, final_step)
 
-
-    if game.get_ball().position == final_step:
-        # remove the pickup roll and probability
-        rolls.pop()
-        probability_success /= game.get_pickup_prob(active_proc.player, final_step)
+    if len(rolls) == 0:
+        raise ValueError()
 
     p = np.array(rolls) / sum(rolls)
     index_of_failure = np.random.choice(range(len(rolls)), 1, p=p)[0]
