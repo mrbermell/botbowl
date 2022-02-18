@@ -167,17 +167,18 @@ class MockPolicy:
         if game.get_player_action_type() in self.player_actiontypes_without_move_actions:
             return []
 
-        if game.get_active_player().state.moves > 0:
+        ball_carrier = game.get_ball_carrier()
+        is_ball_carrier = game.get_active_player() is game.get_ball_carrier()
+
+        if game.get_active_player().state.moves > 0 and not is_ball_carrier:
             return []
 
         action_probs = []
         ball = game.get_ball()
 
         ball_on_floor_pos = game.get_ball().position if not ball.is_carried else None
-        ball_carrier = game.get_ball_carrier()
         opp_ball_carrier = ball_carrier if ball_carrier is not None and ball_carrier.team is not game.active_team else None
 
-        is_ball_carrier = game.get_active_player() is game.get_ball_carrier()
         is_home = game.get_active_player().team is game.state.home_team
 
         for pos in action_choice.positions:
@@ -190,7 +191,7 @@ class MockPolicy:
             elif opp_ball_carrier is not None and pos.distance(opp_ball_carrier.position):
                 prob = 2
 
-            elif is_ball_carrier and pos in game.arena.is_in_opp_endzone(pos, is_home):
+            elif is_ball_carrier and game.arena.is_in_opp_endzone(pos, is_home):
                 prob = 2
 
             action = Action(ActionType.MOVE, position=pos)
