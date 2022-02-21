@@ -101,6 +101,14 @@ class ActionNode(Node):
         child = self.children[self.explored_actions.index(action)]
         return get_action_node_children(child)
 
+    def get_accum_prob(self, start_prob=1.0):
+        node = self
+        prob = start_prob
+        while node.parent is not None:
+            if isinstance(node.parent, ChanceNode):
+                prob *= node.parent.get_child_prob(node)
+            node = node.parent
+        return prob
 
     @staticmethod
     def hash_game_state(game: botbowl.Game) -> str:

@@ -187,6 +187,46 @@ def get_best_action(root_node: ActionNode, weights: HeuristicVector) -> botbowl.
     return root_node.explored_actions[action_index]
 
 
+def show_best_path(tree: SearchTree, weights: HeuristicVector):
+
+    node = tree.root_node
+    tree.set_game_to_node(node)
+    report_index = len(tree.game.state.reports)
+
+    while len(node.children) > 0:
+        if isinstance(node, ActionNode):
+            assert len(node.children) == len(node.explored_actions)
+            child_node_values = (get_node_value(node, weights) for node in node.children)
+
+            if node.is_home:
+                action_index = np.argmax(child_node_values)
+            else:
+                action_index = np.argmin(child_node_values)
+
+            best_action = node.explored_actions[action_index]
+            child = node.children[action_index]
+
+            tree.set_game_to_node(node)
+            for r in tree.game.state.reports[report_index:]:
+                print(f"    {r}")
+            report_index = len(tree.game.state.reports)
+            print(best_action)
+
+        elif isinstance(node, ChanceNode):
+            child, prob = max(zip(node.children, node.child_probability), key=itemgetter(1))
+
+        else:
+            raise ValueError()
+
+        node = child
+
+    assert len(node.children) == 0
+
+
+
+
+
+
 
 
 
