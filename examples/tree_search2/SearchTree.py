@@ -57,9 +57,8 @@ class ActionNode(Node):
     info: Any  # Only purpose is to store information for users of SearchTree
     simple_hash: str
 
-    def __init__(self, game: botbowl.Game, parent: Optional[Node], reward=0.0):
+    def __init__(self, game: botbowl.Game, parent: Optional[Node]):
         super().__init__(game, parent)
-        self.reward = reward
         self.team = game.state.available_actions[0].team
         self.is_home = game.active_team is game.state.home_team
         assert self.is_home or game.active_team is game.state.away_team

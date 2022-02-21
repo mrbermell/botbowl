@@ -10,7 +10,6 @@ import botbowl
 from examples.tree_search2.SearchTree import SearchTree, ActionNode, ChanceNode, Node
 from collections import namedtuple
 
-
 HeuristicVector = namedtuple('HeuristicVector', ['score',
                                                  'tv_on_pitch',
                                                  'ball_position',
@@ -85,30 +84,25 @@ def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, e
             tree.set_game_to_node(new_node)
             _, probabilities, actions_ = policy(tree.game)
             num_actions = len(actions_)
-
             heuristic = np.array(get_heuristic(tree.game))
-
             reward = np.zeros(shape=heuristic.shape)
 
             if new_node.parent is not None:
                 for parent in new_node.get_all_parents(include_self=False):
                     if isinstance(parent, ActionNode):
-                        reward = heuristic - parent.info.reward
+                        reward = heuristic - parent.info.heuristic
                         break
 
-
-            new_node.info= MCTS_Info(probabilities=probabilities,
-                                     actions=actions_,
-                                     action_values=np.zeros((num_actions, len(reward))),
-                                     visits=np.zeros(num_actions, dtype=np.int),
-                                     heuristic=heuristic,
-                                     reward=reward,
-                                     state_value=0)
-
+            new_node.info = MCTS_Info(probabilities=probabilities,
+                                      actions=actions_,
+                                      action_values=np.zeros((num_actions, len(reward))),
+                                      visits=np.zeros(num_actions, dtype=np.int),
+                                      heuristic=heuristic,
+                                      reward=reward,
+                                      state_value=0)
 
     def back_propagate(final_node: ActionNode):
-        #propagated_value = final_node.info.state_value + final_node.info.reward
-        propagated_value = final_node.info.reward
+        propagated_value = final_node.info.reward  # todo: add final_node.info.state_value too
 
         n = final_node
         while True:
@@ -118,11 +112,11 @@ def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, e
                 action_object = n.parent.get_child_action(n)
                 action_index = n.parent.info.actions.index(action_object)
                 n.parent.info.action_values[action_index] += propagated_value
-                propagated_value += n.parent.reward
+                propagated_value += n.parent.info.reward
             else:
                 raise ValueError()
 
-            if n.parent is tree.root_node:
+            if n.parent.parent is None:
                 break
             n = n.parent
 
@@ -136,15 +130,18 @@ def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, e
         # pick next action
         mcts_info = node.info
         weighted_action_vals = np.matmul(mcts_info.action_values, weights)
-        visits = mcts_info.visits + (mcts_info.visits==0)
-        a_index = np.argmax(weighted_action_vals/visits + exploration_coeff * mcts_info.probabilities/visits)
-        mcts_info.visits[a_index] += 1  # increment visit count
+        visits = mcts_info.visits + (mcts_info.visits == 0)  # last term prevents ZeroDivisionError
+
+        if node.is_home:
+            a_index = np.argmax((weighted_action_vals + exploration_coeff * mcts_info.probabilities) / visits)
+        else:
+            a_index = np.argmin((weighted_action_vals - exploration_coeff * mcts_info.probabilities) / visits)
+
+        mcts_info.visits[a_index] += 1
 
         # expand action and handle new nodes
         action: botbowl.Action = mcts_info.actions[a_index]
         if action not in node.explored_actions:
-            if action.action_type is botbowl.ActionType.BLOCK and action.position.x == 1 and action.position.y == 1:
-                print("")
             tree.expand_action_node(node, action)
 
         for child_node in node.get_children_from_action(action):
@@ -152,7 +149,6 @@ def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, e
             if continue_expansion(child_node):
                 node_queue.put(child_node)
             else:
-                # backpropagation!
                 back_propagate(child_node)
 
 
@@ -188,7 +184,6 @@ def get_best_action(root_node: ActionNode, weights: HeuristicVector) -> botbowl.
 
 
 def show_best_path(tree: SearchTree, weights: HeuristicVector):
-
     node = tree.root_node
     tree.set_game_to_node(node)
     report_index = len(tree.game.state.reports)
@@ -221,15 +216,3 @@ def show_best_path(tree: SearchTree, weights: HeuristicVector):
         node = child
 
     assert len(node.children) == 0
-
-
-
-
-
-
-
-
-
-
-
-
