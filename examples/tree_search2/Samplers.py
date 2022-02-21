@@ -142,6 +142,8 @@ class MockPolicy:
         self.env_conf = EnvConf()
         self.positional_types = set(self.env_conf.positional_action_types)
         self.simple_types = set(self.env_conf.simple_action_types)
+        self.simple_types.remove(ActionType.END_PLAYER_TURN)
+
 
         self.convert_function: Dict[ActionType, Callable[[botbowl.Game], MockPolicy.ActionProbList]] = {
                                  ActionType.MOVE: self.move_actions,
@@ -231,6 +233,9 @@ class MockPolicy:
             elif type(game.get_procedure()) is Setup and action_type not in {ActionType.END_SETUP, ActionType.PLACE_PLAYER}:
                 actions.append((Action(action_type), 1))
                 self.end_setup = True
+
+        if len(actions) == 0:
+            actions.append((Action(ActionType.END_PLAYER_TURN), 1))
 
         action_objects, probabilities = zip(*actions)
         probabilities = np.array(probabilities, dtype=np.float)
