@@ -102,7 +102,7 @@ def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, e
                                       state_value=0)
 
     def back_propagate(final_node: ActionNode):
-        propagated_value = final_node.info.reward  # todo: add final_node.info.state_value too
+        propagated_value = np.copy(final_node.info.reward)  # todo: add final_node.info.state_value too
 
         n = final_node
         while True:
@@ -191,7 +191,7 @@ def show_best_path(tree: SearchTree, weights: HeuristicVector):
     while len(node.children) > 0:
         if isinstance(node, ActionNode):
             assert len(node.children) == len(node.explored_actions)
-            child_node_values = (get_node_value(node, weights) for node in node.children)
+            child_node_values = [get_node_value(node, weights) for node in node.children]
 
             if node.is_home:
                 action_index = np.argmax(child_node_values)
@@ -205,7 +205,11 @@ def show_best_path(tree: SearchTree, weights: HeuristicVector):
             for r in tree.game.state.reports[report_index:]:
                 print(f"    {r}")
             report_index = len(tree.game.state.reports)
-            print(best_action)
+
+            action_type = str(best_action.action_type).split('.')[-1]
+            pos = best_action.position
+            expected_value = child_node_values[action_index]
+            print(f"{action_type}, {pos}, value={expected_value:.3f}")
 
         elif isinstance(node, ChanceNode):
             child, prob = max(zip(node.children, node.child_probability), key=itemgetter(1))
