@@ -482,19 +482,15 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         rolls = list(collapse(remaining_current_step_rolls))
 
         if current_step != final_step:
-            try:
-                debug_step_count2 = game.get_step()
-                new_path = pf.get_safest_path(game, player, final_step, from_position=current_step, num_moves_used=player.state.moves)
-                game.revert(debug_step_count2)
 
-                assert new_path.steps == path.steps[-len(new_path):]
-                assert new_path.rolls == path.rolls[-len(new_path):]
-            except AttributeError as e:
-                raise e
-            except AssertionError as e:
-                raise e
-            except IndexError as e:
-                raise e
+            step_count = game.get_step()
+            game.move(player, current_step)
+            new_path = pf.get_safest_path(game, player, final_step)
+            game.revert(step_count)
+
+            assert new_path.steps == path.steps[-len(new_path):]
+            assert new_path.rolls == path.rolls[-len(new_path):]
+
 
             rolls.extend(collapse(new_path.rolls))
             probability_success *= new_path.prob
