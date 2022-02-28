@@ -338,7 +338,7 @@ def expand_throw_in(game: botbowl.Game, parent: Node) -> Node:
     active_proc: procedures.ThrowIn = game.get_procedure()
     assert type(active_proc) is procedures.ThrowIn
 
-    d6_fixes = [3, 4] if game.config.arena.height > 7 else [1, 2]
+    d6_fixes = [3, 4] if game.arena.height > 7 else [1, 2]
 
     with only_fixed_rolls(game, d3=[2], d6=d6_fixes):
         game.step()
@@ -425,14 +425,24 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 
     move_action_proc: procedures.MoveAction = first(proc for proc in reversed(game.state.stack.items)
                                                     if isinstance(proc, procedures.MoveAction))
+
+    is_blitz = type(move_action_proc) is procedures.BlitzAction
+    is_handoff = type(move_action_proc) is procedures.HandoffAction
+
     player = move_action_proc.player
 
     if move_action_proc.steps is not None:
         final_step = move_action_proc.steps[-1]
     else:
-        final_step = active_proc.position
+        if is_blitz:
+            block_proc: procedures.Block = first(filter(lambda proc: type(proc) is procedures.Block, game.state.stack.items))
+            final_step = block_proc.defender.position
+        elif is_handoff:
+            raise ValueError()
+        else:
+            final_step = active_proc.position
 
-    is_pickup = game.get_ball().position == final_step
+    is_pickup = game.get_ball().position == final_step and not game.get_ball().is_carried
     path = move_action_proc.paths[final_step]
 
     """
@@ -464,7 +474,10 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         assert active_proc.reroll is None
 
         current_step = active_proc.position
-        assert player.position.distance(current_step) == 1
+        try:
+            assert player.position.distance(current_step) == 1
+        except AssertionError as e:
+            raise e
 
         i = 0
         while path.steps[i] != current_step:
@@ -485,12 +498,11 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 
             step_count = game.get_step()
             game.move(player, current_step)
-            new_path = pf.get_safest_path(game, player, final_step)
+            new_path = pf.get_safest_path(game, player, final_step, blitz=is_blitz)
             game.revert(step_count)
 
             assert new_path.steps == path.steps[-len(new_path):]
             assert new_path.rolls == path.rolls[-len(new_path):]
-
 
             rolls.extend(collapse(new_path.rolls))
             probability_success *= new_path.prob
@@ -500,11 +512,12 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
                 rolls.pop()
                 probability_success /= game.get_pickup_prob(active_proc.player, final_step)
 
-    if len(rolls) == 0:
-        raise ValueError()
+    try:
+        p = np.array(rolls) / sum(rolls)
+        index_of_failure = np.random.choice(range(len(rolls)), 1, p=p)[0]
+    except ValueError as e:
+        raise e
 
-    p = np.array(rolls) / sum(rolls)
-    index_of_failure = np.random.choice(range(len(rolls)), 1, p=p)[0]
 
     # STEP UNTIL FAILURE (possibly no steps at all)
     with only_fixed_rolls(game, d6=[6]*index_of_failure):

@@ -90,22 +90,25 @@ def test_tree_searcher():
 
 
 def test_dodge_pickup_score():
-    game, (player, _, _) = get_custom_game_turn(player_positions=[(5, 5), (6, 6)],
-                                                opp_player_positions=[(4, 4)],
-                                                ball_position=(3, 3),
-                                                forward_model_enabled=True,
-                                                pathfinding_enabled=True)
+    game, _ = get_custom_game_turn(player_positions=[(5, 5), (6, 6)],
+                                   opp_player_positions=[(4, 4), (4, 2)],
+                                   ball_position=(3, 3),
+                                   forward_model_enabled=True,
+                                   pathfinding_enabled=True)
 
-    weights = HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0, tv_on_pitch=0)
+    weights = HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.3, ball_position=0.001, tv_on_pitch=0.5)
 
     tree = SearchTree(game)
     policy = MockPolicy()
 
-    for i in range(60):
+    for i in range(10):
         do_mcts_branch(tree, policy, weights, exploration_coeff=5)
 
     print("Best path")
     show_best_path(tree, weights)
+    print("LENGTH!!!")
+    print(len(tree.all_action_nodes))
+
     return
 
     def search_select_step():
