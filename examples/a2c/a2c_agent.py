@@ -115,9 +115,9 @@ class A2CAgent(Agent):
 
     def __init__(self, name,
                  env_conf: EnvConf,
+                 exclude_pathfinding_moves,
                  scripted_func: Callable[[Game], Optional[Action]] = None,
-                 filename=model_filename,
-                 exclude_pathfinding_moves=True):
+                 filename=model_filename):
         super().__init__(name)
         self.env = BotBowlEnv(env_conf)
         self.exclude_pathfinding_moves = exclude_pathfinding_moves
@@ -181,7 +181,7 @@ class A2CAgent(Agent):
             Variable(action_mask))
 
         action_idx = actions[0]
-        action_objects = self.env._compute_action(action_idx, flip=self.env._flip_x_axis())
+        action_objects = self.env._compute_action(action_idx)
 
         self.action_queue = action_objects
         return self.action_queue.pop(0)
