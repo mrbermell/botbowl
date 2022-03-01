@@ -93,7 +93,7 @@ def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, e
                         reward = heuristic - parent.info.heuristic
                         break
 
-            new_node.info = MCTS_Info(probabilities=probabilities,
+            new_node.info = MCTS_Info(probabilities=probabilities / probabilities.mean(),
                                       actions=actions_,
                                       action_values=np.zeros((num_actions, len(reward))),
                                       visits=np.zeros(num_actions, dtype=np.int),
