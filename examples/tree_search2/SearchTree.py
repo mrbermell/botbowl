@@ -475,7 +475,7 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 
         current_step = active_proc.position
         try:
-            assert player.position.distance(current_step) == 1
+            assert player.position.distance(current_step) == 1 or is_pickup or is_blitz
         except AssertionError as e:
             raise e
 
@@ -501,7 +501,8 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
             new_path = pf.get_safest_path(game, player, final_step, blitz=is_blitz)
             game.revert(step_count)
 
-            assert new_path.steps == path.steps[-len(new_path):]
+
+            # assert new_path.steps == path.steps[-len(new_path):]  this assert can't be made because of small randomness in pathfinder
             assert new_path.rolls == path.rolls[-len(new_path):]
 
             rolls.extend(collapse(new_path.rolls))
