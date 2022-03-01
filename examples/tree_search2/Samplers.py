@@ -169,19 +169,23 @@ class MockPolicy:
         if game.get_player_action_type() in self.player_actiontypes_without_move_actions:
             return []
 
-        ball_carrier = game.get_ball_carrier()
-        is_ball_carrier = game.get_active_player() is game.get_ball_carrier()
-
-        if game.get_active_player().state.moves > 0 and not is_ball_carrier:
-            return []
-
         action_probs = []
+
+        player = game.get_active_player()
+        ball_carrier = game.get_ball_carrier()
+        is_ball_carrier = player is game.get_ball_carrier()
+
+        if player.state.moves > 0 and not is_ball_carrier:
+            return []
+        elif is_ball_carrier and player.state.moves > 0:
+            action_probs.append((Action(ActionType.END_PLAYER_TURN), 1))
+
         ball = game.get_ball()
 
         ball_on_floor_pos = game.get_ball().position if not ball.is_carried else None
         opp_ball_carrier = ball_carrier if ball_carrier is not None and ball_carrier.team is not game.active_team else None
 
-        is_home = game.get_active_player().team is game.state.home_team
+        is_home = player.team is game.state.home_team
 
         for pos in action_choice.positions:
             prob = 1
@@ -234,12 +238,12 @@ class MockPolicy:
                 actions.append((Action(action_type), 1))
                 self.end_setup = True
 
-        if len(actions) == 0:
+        if len(actions) == 0 and ActionType.END_PLAYER_TURN in [ac.action_type for ac in game.state.available_actions]:
             actions.append((Action(ActionType.END_PLAYER_TURN), 1))
 
         action_objects, probabilities = zip(*actions)
         probabilities = np.array(probabilities, dtype=np.float)
-        probabilities += 0.001*np.random.random(len(probabilities))
+        probabilities += 0.0001*np.random.random(len(probabilities))
         probabilities /= sum(probabilities)
 
         return 0.0, probabilities, action_objects
