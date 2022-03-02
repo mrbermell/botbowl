@@ -3,6 +3,7 @@ from random import randint
 
 import numpy as np
 import pytest
+from more_itertools import first
 from pytest import approx
 
 from botbowl import Square, Action, ActionType, Skill, BBDieResult
@@ -72,23 +73,6 @@ def test_expand_pickup(data):
     assert all(y == approx(x, abs=1e-12) for x, y in zip(sorted(next_node.child_probability), sorted(outcome_probs)))
 
 
-def test_tree_searcher():
-    game, _ = get_custom_game_turn(player_positions=[(5, 5)],
-                                   ball_position=(3, 3),
-                                   forward_model_enabled=True,
-                                   pathfinding_enabled=True)
-
-    with only_fixed_rolls(game, d6=[6]):
-        action = ActionSampler(game).get_action()
-        game.step(action)
-        action = ActionSampler(game).get_action()
-        game.step(action)
-        action = ActionSampler(game).get_action()
-        game.step(action)
-
-    assert game.state.home_team.state.score + game.state.away_team.state.score == 1
-
-
 def test_dodge_pickup_score():
     game, players = get_custom_game_turn(player_positions=[(5, 5), (6, 6)],
                                          opp_player_positions=[(4, 4), (4, 2)],
@@ -96,20 +80,13 @@ def test_dodge_pickup_score():
                                          forward_model_enabled=True,
                                          pathfinding_enabled=True)
 
-    weights = HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.3, ball_position=0.001, tv_on_pitch=0.5)
+    weights = HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0.001, tv_on_pitch=0)
 
     tree = SearchTree(game)
     policy = MockPolicy()
 
-    #for i in range(10):
-    #    do_mcts_branch(tree, policy, weights, exploration_coeff=5)
-
-    #print("Best path")
-    #show_best_path(tree, weights)
-
-
     def search_select_step():
-        for i in range(10):
+        for i in range(100):
             do_mcts_branch(tree, policy, weights, exploration_coeff=0.5)
         info: MCTS_Info = tree.root_node.info
         print("   ")
@@ -117,6 +94,16 @@ def test_dodge_pickup_score():
         return info.actions[np.argmax(info.visits)]
 
     a = search_select_step()
+    game.step(a)
+    tree.set_new_root(game)
+
+    a = search_select_step()
+    game.step(a)
+    tree.set_new_root(game)
+
+    a = search_select_step()
+    game.step(a)
+
 
 
 def test_pickup_score():
@@ -134,7 +121,7 @@ def test_pickup_score():
     policy = MockPolicy()
 
     def search_select_step():
-        for i in range(10):
+        for i in range(40):
             do_mcts_branch(tree, policy, weights, exploration_coeff=0.5)
         info: MCTS_Info = tree.root_node.info
         print("   ")
@@ -145,7 +132,11 @@ def test_pickup_score():
     assert a.action_type == ActionType.START_MOVE and a.position == player.position
     with only_fixed_rolls(game):
         game.step(a)
+
     tree.set_new_root(game)
+
+    setup_node: ActionNode = first(filter(lambda n: n.simple_hash.find('Setup') > 0, tree.all_action_nodes))
+    assert setup_node.get_accum_prob() == approx(2/3)
 
     a = search_select_step()
     assert a.action_type == ActionType.MOVE and a.position == Square(3, 3)
@@ -263,10 +254,14 @@ def print_node(node, weights):
     mcts_info = node.info
 
     for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
-        action.player = None
-        action_value = np.dot(action_val, weights)
         if visits > 0:
-            print(f"{action}, {visits=}, avg(action_value)={action_value/visits:.2f}")
+            action_value = np.dot(action_val, weights)
+            a_index = node.explored_actions.index(action)
+            child_node = node.children[a_index]
+            assert child_node is not None
+            expected_value = get_node_value(child_node, weights)
+            action.player = None
+            print(f"{action}, {visits=}, avg(AV)={action_value/visits:.2f}, EV={expected_value:.2f}")
 
 
 def test_mcts():
