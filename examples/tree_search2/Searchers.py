@@ -77,6 +77,8 @@ def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, e
             return False
         if game.state.home_team.state.score + game.state.away_team.state.score != scores:
             return False
+        if a_node.get_accum_prob() < 0.02:
+            return False
         return True
 
     def setup_node(new_node: ActionNode):
