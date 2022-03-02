@@ -495,17 +495,24 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         rolls = list(collapse(remaining_current_step_rolls))
 
         if current_step != final_step:
-
             step_count = game.get_step()
-            game.move(player, current_step)
+            if player.position != current_step:
+                try:
+                    game.move(player, current_step)
+                except AssertionError as e:
+                    raise e
             new_path = pf.get_safest_path(game, player, final_step, blitz=is_blitz)
             game.revert(step_count)
 
-
-            # assert new_path.steps == path.steps[-len(new_path):]  this assert can't be made because of small randomness in pathfinder
-            assert new_path.rolls == path.rolls[-len(new_path):]
-
-            rolls.extend(collapse(new_path.rolls))
+            #try:
+            #    # assert new_path.steps == path.steps[-len(new_path):]  this assert can't be made because of small randomness in pathfinder
+            #    assert list(collapse(new_path.rolls)) == list(collapse(path.rolls[-len(new_path):])), f"{new_path.rolls} != {path.rolls[-len(new_path):]}"
+            #except AssertionError as e:
+            #    raise e
+            try:
+                rolls.extend(collapse(new_path.rolls))
+            except AttributeError as e:
+                raise e
             probability_success *= new_path.prob
 
             if is_pickup:
@@ -523,6 +530,8 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     # STEP UNTIL FAILURE (possibly no steps at all)
     with only_fixed_rolls(game, d6=[6]*index_of_failure):
         while len(botbowl.D6.FixedRolls) > 0:
+            if len(game.get_available_actions())>0:
+                raise AttributeError("wrong")
             game.step()
 
     new_parent = ChanceNode(game, parent)
@@ -531,9 +540,11 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     # SUCCESS SCENARIO
     with only_fixed_rolls(game, d6=[6]*(len(rolls) - index_of_failure)):
         while len(botbowl.D6.FixedRolls) > 0:
-            if type(game.get_procedure()) in {procedures.Armor}:
+            if type(game.get_procedure()) not in {procedures.GFI, procedures.Block, procedures.Dodge, procedures.Move, procedures.MoveAction, procedures.BlitzAction}:
                 raise AttributeError("wrong")
-            if len(game.get_available_actions())>0:
+            if len(game.get_available_actions()) > 0:
+                raise AttributeError("wrong")
+            if type(game.get_procedure()) is procedures.Block and not game.get_procedure().gfi:
                 raise AttributeError("wrong")
             game.step()
     success_node = expand_none_action(game, new_parent, moving_handled=True)
