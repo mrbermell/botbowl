@@ -1,3 +1,4 @@
+from more_itertools import first
 from tests.util import Square, get_game_turn, Skill, Action, ActionType, get_custom_game_turn
 import pytest
 import unittest.mock
@@ -466,9 +467,10 @@ def test_straight_paths(pf):
 
     for path in paths:
         if path.get_last_step().x == 7:
-            assert all(step.x==7 for step in path.steps)
+            assert all(step.x == 7 for step in path.steps)
         if path.get_last_step().y == 7:
             assert all(step.y == 7 for step in path.steps)
+
 
 @pytest.mark.parametrize("pf_enabled", [False, True])
 def test_blitz_one_move_left(pf_enabled):
@@ -520,3 +522,27 @@ def test_scoring_paths(pf, as_home):
             assert not found_td
             if step.x == end_zone_x:
                 found_td = True
+
+
+@pytest.mark.parametrize("pf", pathfinding_modules_to_test)
+def test_forced_pickup_path(pf):
+    game, (player1, player2, player3) = get_custom_game_turn(player_positions=[(1, 1), (1, 2), (2, 2)],
+                                                             ball_position=(2, 1),
+                                                             pathfinding_enabled=True)
+    paths = pf.get_all_paths(game, player1)
+    assert len(paths) == 1
+    assert paths[0].get_last_step() == game.get_ball_position()
+
+
+@pytest.mark.parametrize("pf", pathfinding_modules_to_test)
+def test_forced_pickup_path(pf):
+    game, (player,) = get_custom_game_turn(player_positions=[(1, 1)],
+                                           ball_position=(3, 3),
+                                           pathfinding_enabled=True)
+    ball = game.get_ball()
+    ball.on_ground = False
+
+    paths = pf.get_all_paths(game, player)
+    path: python_pathfinding.Path = first(filter(lambda p: p.get_last_step() == ball.position, paths))
+
+    assert path.prob == 1
