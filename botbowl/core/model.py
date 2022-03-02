@@ -218,7 +218,7 @@ class Square:
         return self.distance(other, manhattan) == 1
 
     def __repr__(self):
-        return f"Square({self.x}, {self.y}, out={self._out_of_bounds if self._out_of_bounds is not None else 'None'})"
+        return f"Square({self.x}, {self.y})"
 
 
 class PlayerState(Reversible):
@@ -680,9 +680,10 @@ class Action:
         self.player = player
 
     def __repr__(self):
-        pos_str = f", position={self.position}" if self.position is not None else ""
+        pos_str = f", {self.position}" if self.position is not None else ""
         player_str = f", player={self.player}" if self.player is not None else ""
-        return f"Action({self.action_type}{pos_str}{player_str})"
+        action_type = str(self.action_type).split('.')[-1]
+        return f"Action({action_type}{pos_str}{player_str})"
 
     def to_json(self):
         return {
@@ -976,6 +977,8 @@ class BBDie(Die, Immutable):
         if len(BBDie.FixedRolls) > 0:
             self.value = BBDie.FixedRolls.pop(0)
         else:
+            if rnd is None:
+                raise ValueError()
             r = rnd.randint(1, 7)
             if r == 6:
                 r = 3

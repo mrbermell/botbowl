@@ -2590,7 +2590,7 @@ class MoveAction(Procedure):
 
     def start(self):
         if self.player_action_type == PlayerActionType.MOVE:
-            self.game.report(Outcome(OutcomeType.MOVE_ACTION_STARTED, player=self.player))
+            self.game.report(Outcome(OutcomeType.MOVE_ACTION_STARTED, position=self.player.position, player=self.player))
             self.game.state.player_action_type = PlayerActionType.MOVE
         self.can_undo = self.game.get_team_agent(self.player.team).human and not self.player.state.failed_nega_trait_this_turn
 
@@ -3010,7 +3010,7 @@ class BlitzAction(MoveAction):
         self.player = player
 
     def start(self):
-        self.game.report(Outcome(OutcomeType.BLITZ_ACTION_STARTED, player=self.player))
+        self.game.report(Outcome(OutcomeType.BLITZ_ACTION_STARTED, position=self.player.position, player=self.player))
         self.game.state.player_action_type = PlayerActionType.BLITZ
         self.game.use_blitz_action()
 
