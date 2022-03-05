@@ -7,7 +7,7 @@ import numpy as np
 from pytest import approx
 
 import botbowl
-from examples.tree_search2.SearchTree import SearchTree, ActionNode, ChanceNode, Node
+from SearchTree import SearchTree, ActionNode, ChanceNode, Node
 from collections import namedtuple
 
 HeuristicVector = namedtuple('HeuristicVector', ['score',

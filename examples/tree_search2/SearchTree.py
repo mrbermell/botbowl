@@ -17,7 +17,7 @@ import botbowl.core.procedure as procedures
 import botbowl.core.pathfinding.python_pathfinding as pf
 from botbowl import Skill, BBDieResult
 from tests.util import only_fixed_rolls
-from .hashmap import HashMap
+from hashmap import HashMap
 
 accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
 
