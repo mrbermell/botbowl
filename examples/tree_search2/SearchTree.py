@@ -36,7 +36,7 @@ class Node(ABC):
         self.parent = parent
         self.children = []
         self.change_log = game.trajectory.action_log[parent.step_nbr:] if parent is not None else []
-        self.top_proc = str(game.get_procedure())
+        self.top_proc = str(game.get_procedure()) if not game.state.game_over else "GAME_OVER"
 
         assert parent is None or len(self.change_log) > 0
 
@@ -313,7 +313,7 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
     Called recursively.
     """
 
-    while len(game.state.available_actions) == 0:
+    while len(game.state.available_actions) == 0 and not game.state.game_over:
         proc = game.get_procedure()
         expand_func = get_expanding_function(proc, moving_handled, pickup_handled)
 
@@ -352,6 +352,9 @@ def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
     # noinspection PyTypeChecker
     active_proc: procedures.Bounce = game.get_procedure()
     assert type(active_proc) is procedures.Bounce
+
+    if active_proc.kick:
+        assert False  #todo!
 
     new_parent = ChanceNode(game, parent)
 
@@ -407,9 +410,14 @@ def expand_pickup(game: botbowl.Game, parent: Node) -> Node:
     assert game.get_step() == new_parent.step_nbr
 
     # FAILURE SCENARIO
-    assert not active_proc.player.has_skill(Skill.SURE_HANDS), 'cant handle sure hands yet'
-    with only_fixed_rolls(game, d6=[1]):
-        game.step()
+    fixes = [1]
+    if active_proc.player.has_skill(Skill.SURE_HANDS):
+        fixes.append(1)
+
+    with only_fixed_rolls(game, d6=fixes):
+        while len(botbowl.D6.FixedRolls) > 0:
+            game.step()
+
     fail_node = expand_none_action(game, new_parent, pickup_handled=True)
     new_parent.connect_child(fail_node, 1 - probability_success)
 
@@ -677,6 +685,9 @@ def expand_catch(game: botbowl.Game, parent: Node) -> Node:
     # noinspection PyTypeChecker
     proc: procedures.Catch = game.get_procedure()
     assert type(proc) is procedures.Catch
+
+    if not proc.player.can_catch():
+        expand_none_action(game, parent)
 
     p_catch = game.get_catch_prob(proc.player, accurate=proc.accurate, handoff=proc.handoff)
 
