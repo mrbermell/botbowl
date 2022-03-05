@@ -323,9 +323,11 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
             assert len(botbowl.D6.FixedRolls) == 0
             game.revert(parent.step_nbr)
             return return_node
-
-        with only_fixed_rolls(game):
-            game.step()
+        try:
+            with only_fixed_rolls(game):
+                game.step()
+        except AttributeError as e:
+            raise e
 
     action_node = ActionNode(game, parent)
     game.revert(parent.step_nbr)
@@ -722,7 +724,10 @@ def handle_ko_wakeup(game: botbowl.Game, parent: Node) -> Node:
 
 
 def expand_with_fixes(game, parent, probability, **fixes):
-    with only_fixed_rolls(game, **fixes):
-        game.step()
+    try:
+        with only_fixed_rolls(game, **fixes):
+            game.step()
+    except AssertionError as e:
+        raise e
     new_node = expand_none_action(game, parent)
     parent.connect_child(new_node, probability)
