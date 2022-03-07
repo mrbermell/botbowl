@@ -7,6 +7,7 @@ import botbowl
 import botbowl.core.procedure as procedure
 import numpy as np
 from SearchTree import SearchTree
+from botbowl.ai.env_render import EnvRenderer
 from botbowl import Game, ActionType
 from botbowl.core.model import Agent, Action
 from examples.tree_search2.Samplers import MockPolicy
@@ -54,7 +55,7 @@ class SearchAgent(Agent):
         child_values = [get_node_value(child_node, self.weights) for child_node in self.tree.root_node.children]
         action = self.tree.root_node.explored_actions[np.argmax(child_values)]
 
-        print(f"action: {action}")
+        print(f"num_visits={self.tree.root_node.info.visits.sum()} action: {action}")
         return action
 
     def scripted_action(self, game: botbowl.Game):
@@ -114,6 +115,7 @@ def main():
     agent = SearchAgent("searcher agent")
     agent.new_game(game, game.state.home_team)
     game.step(Action(ActionType.START_GAME))
+    renderer = EnvRenderer(env)
 
     def calc_score():
         return game.state.home_team.state.score, game.state.away_team.state.score
@@ -123,6 +125,7 @@ def main():
     while not game.state.game_over:
         action = agent.act(game)
         game.step(action)
+        renderer.render()
         if current_score != calc_score():
             current_score = calc_score()
             print(f"Goal! {current_score}")
