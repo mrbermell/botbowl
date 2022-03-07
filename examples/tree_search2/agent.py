@@ -26,7 +26,7 @@ class SearchAgent(Agent):
         self.queued_actions = queue.Queue()
         self.team = None
         self.policy = MockPolicy()
-        self.weights = HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0.001, tv_on_pitch=0)
+        self.weights = HeuristicVector(score=1, ball_marked=0.01, ball_carried=0.1, ball_position=0.001, tv_on_pitch=0)
         self.width = None
         self.height = None
 
@@ -48,11 +48,8 @@ class SearchAgent(Agent):
             for _ in range(5):
                 do_mcts_branch(self.tree, self.policy, self.weights, exploration_coeff=0.5)
 
-            print("mcts on-going!")
-            if self.tree.root_node.info.visits.sum() > 9:
+            if self.tree.root_node.info.visits.sum() > 25 or game.get_seconds_left() < 5:
                 break
-
-            assert game.get_seconds_left() > 5
 
         child_values = [get_node_value(child_node, self.weights) for child_node in self.tree.root_node.children]
         action = self.tree.root_node.explored_actions[np.argmax(child_values)]
@@ -118,9 +115,18 @@ def main():
     agent.new_game(game, game.state.home_team)
     game.step(Action(ActionType.START_GAME))
 
+    def calc_score():
+        return game.state.home_team.state.score, game.state.away_team.state.score
+
+    current_score = calc_score()
+
     while not game.state.game_over:
         action = agent.act(game)
         game.step(action)
+        if current_score != calc_score():
+            current_score = calc_score()
+            print(f"Goal! {current_score}")
+
     print(f"home: {game.state.home_team.state.score}, away: {game.state.away_team.state.score}")
 
 
