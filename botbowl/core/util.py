@@ -99,7 +99,10 @@ class Stack(Reversible):
         self.items.remove(item)
 
     def peek(self):
-        return self.items[len(self.items) - 1]
+        try:
+            return self.items[len(self.items) - 1]
+        except IndexError:
+            return None
 
     def size(self):
         return len(self.items)
