@@ -1,19 +1,16 @@
 import queue
-from copy import deepcopy
-from time import perf_counter
 from typing import Optional
 
 import botbowl
 import botbowl.core.procedure as procedure
 import numpy as np
 from SearchTree import SearchTree
-from botbowl.ai.env_render import EnvRenderer
 from botbowl import Game, ActionType
+from botbowl.ai.env_render import EnvRenderer
 from botbowl.core.model import Agent, Action
 from examples.tree_search2.Samplers import MockPolicy
 from examples.tree_search2.Searchers import do_mcts_branch, HeuristicVector, get_node_value
 from more_itertools import first
-from tests.util import get_custom_game_turn
 
 
 class SearchAgent(Agent):

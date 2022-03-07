@@ -537,7 +537,6 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
                     probability_success *= new_path.prob
             except AttributeError as e:
                 raise e
-            probability_success *= new_path.prob
 
             if is_pickup:
                 # remove the pickup roll and probability
@@ -578,8 +577,7 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 
     # FAILURE SCENARIO
     fail_rolls = [1]
-    active_proc = game.get_procedure()
-    if type(active_proc) is procedures.Dodge and player.can_use_skill(Skill.DODGE):
+    if type(game.get_procedure()) is procedures.Dodge and player.can_use_skill(Skill.DODGE):
         fail_rolls.append(1)
 
     with only_fixed_rolls(game, d6=fail_rolls):

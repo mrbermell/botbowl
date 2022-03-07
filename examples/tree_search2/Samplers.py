@@ -206,6 +206,9 @@ class MockPolicy:
         return action_probs
 
     def __call__(self, game: botbowl.Game) -> Tuple[float, np.ndarray, List[botbowl.Action]]:
+        if game.state.game_over:
+            return 0.0, np.array([1.0]), [None]
+
         action = scripted_action(game)
         if action is not None:
             return 0.0, np.array([1.0]), [action]
