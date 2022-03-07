@@ -105,6 +105,24 @@ def test_dodge_pickup_score():
     game.step(a)
 
 
+def test_bounce():
+    game, (attacker, defender) = get_custom_game_turn(player_positions=[(5, 5)],
+                                                      opp_player_positions=[(5, 6)],
+                                                      ball_position=(5, 6),
+                                                      forward_model_enabled=True,
+                                                      pathfinding_enabled=True)
+
+    with only_fixed_rolls(game, block_dice=[BBDieResult.DEFENDER_DOWN]):
+        game.step(Action(ActionType.START_BLOCK, position=attacker.position))
+        game.step(Action(ActionType.BLOCK, position=defender.position))
+        game.step(Action(ActionType.SELECT_DEFENDER_DOWN))
+        game.step(Action(ActionType.PUSH, position=Square(5, 7)))
+
+    action = Action(ActionType.FOLLOW_UP, position=attacker.position)
+
+    tree = SearchTree(game)
+    n = tree.expand_action_node(tree.root_node, action)
+
 
 def test_pickup_score():
     game, (player,) = get_custom_game_turn(player_positions=[(5, 5)],

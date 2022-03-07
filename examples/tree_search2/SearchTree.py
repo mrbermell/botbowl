@@ -294,6 +294,8 @@ def get_expanding_function(proc, moving_handled, pickup_handled) -> Callable[[bo
         return expand_throw_in
     elif proc_type is procedures.PreKickoff:
         return handle_ko_wakeup
+    elif proc_type is procedures.ClearBoard:
+        return handle_sweltering_heat
     else:
         return None
 
@@ -360,38 +362,39 @@ def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
     active_proc: procedures.Bounce = game.get_procedure()
     assert type(active_proc) is procedures.Bounce
 
-    if active_proc.kick:
-        assert False  #todo!
-
     new_parent = ChanceNode(game, parent)
-
     ball_pos = active_proc.piece.position
 
-    active_player = game.get_active_player()
-    adj_squares = game.get_adjacent_squares(ball_pos, occupied=False)
-    sq_to_num_tz = {sq: game.num_tackle_zones_at(active_player, sq) for sq in adj_squares}
-    num_tz_to_sq = {}
+    # todo: consider ball bouncing out.
+    sq_to_num_tz = {}
+    for sq in game.get_adjacent_squares(ball_pos, occupied=False, out=True):
+        if sq.out_of_bounds:
+            sq_to_num_tz[sq] = 'out'
+        else:
+            home_tz = len(game.get_adjacent_players(sq, team=game.state.home_team, standing=True))
+            away_tz = len(game.get_adjacent_players(sq, team=game.state.away_team, standing=True))
+            sq_to_num_tz[sq] = (home_tz, away_tz)
 
+    num_squares = len(sq_to_num_tz)
+    if not (num_squares > 0):
+        raise AssertionError(f"num_squares should be non-zero! ball_pos={ball_pos}")
+
+    num_tz_to_sq = {}
     for sq, num_tz in sq_to_num_tz.items():
         num_tz_to_sq.setdefault(num_tz, []).append(sq)
 
     for num_tz, count in Counter(sq_to_num_tz.values()).items():
         possible_squares = num_tz_to_sq[num_tz]
         square = np.random.choice(possible_squares, 1)[0]
-        assert type(square) == botbowl.Square
 
-        delta_x = square.x - ball_pos.x
-        delta_y = square.y - ball_pos.y
+        roll = botbowl.D8.d8_from_xy[(square.x - ball_pos.x, square.y - ball_pos.y)]
 
-        roll = botbowl.D8.d8_from_xy[(delta_x, delta_y)]
-        with only_fixed_rolls(game, d8=[roll]):
-            game.step()
-        new_node = expand_none_action(game, new_parent)
-        new_parent.connect_child(new_node, prob=count / 8)
+        expand_with_fixes(game, new_parent, probability=count / num_squares, d8=[roll])
+
         assert game.get_step() == new_parent.step_nbr
 
     sum_prob = sum(new_parent.child_probability)
-    new_parent.child_probability = [prob/sum_prob for prob in new_parent.child_probability]
+    #new_parent.child_probability = [prob/sum_prob for prob in new_parent.child_probability]
 
     assert sum(new_parent.child_probability) == approx(1.0, abs=1e-9)
     assert game.get_step() == new_parent.step_nbr
@@ -460,6 +463,9 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     is_pickup = game.get_ball().position == final_step and not game.get_ball().is_carried
     path = move_action_proc.paths[final_step]
 
+    if len(path.rolls) != len(path.steps):
+        raise AssertionError("wrong!")
+
     """
     This block of code sets two important variables: 
         probability_success - probability of the remaining path  
@@ -524,8 +530,11 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
             #    assert list(collapse(new_path.rolls)) == list(collapse(path.rolls[-len(new_path):])), f"{new_path.rolls} != {path.rolls[-len(new_path):]}"
             #except AssertionError as e:
             #    raise e
+
             try:
-                rolls.extend(collapse(new_path.rolls))
+                if new_path is not None:
+                    rolls.extend(collapse(new_path.rolls))
+                    probability_success *= new_path.prob
             except AttributeError as e:
                 raise e
             probability_success *= new_path.prob
@@ -568,7 +577,12 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     assert debug_step_count == game.get_step()
 
     # FAILURE SCENARIO
-    with only_fixed_rolls(game, d6=[1]):
+    fail_rolls = [1]
+    active_proc = game.get_procedure()
+    if type(active_proc) is procedures.Dodge and player.can_use_skill(Skill.DODGE):
+        fail_rolls.append(1)
+
+    with only_fixed_rolls(game, d6=fail_rolls):
         while len(botbowl.D6.FixedRolls) > 0:
             if len(game.get_available_actions())>0:
                 raise AttributeError("wrong")
@@ -694,11 +708,23 @@ def expand_catch(game: botbowl.Game, parent: Node) -> Node:
     assert type(proc) is procedures.Catch
 
     if not proc.player.can_catch():
-        expand_none_action(game, parent)
+        with only_fixed_rolls(game):
+            game.step()
+        assert game.get_procedure() is not proc
+        return expand_none_action(game, parent)
+
+    if proc.roll is not None:
+        with only_fixed_rolls(game):
+            game.step()
+        if game.get_procedure() is not proc:
+            # If the catch proc was removed from the stack, we just continue
+            return expand_none_action(game, parent)
 
     p_catch = game.get_catch_prob(proc.player, accurate=proc.accurate, handoff=proc.handoff)
-
     new_parent = ChanceNode(game, parent)
+
+    assert proc.player.can_catch()
+    assert proc.roll is None
 
     # Success scenario
     expand_with_fixes(game, new_parent, p_catch, d6=[6])
@@ -710,6 +736,22 @@ def expand_catch(game: botbowl.Game, parent: Node) -> Node:
         expand_with_fixes(game, new_parent, 1 - p_catch, d6=[1])
 
     return new_parent
+
+
+def handle_sweltering_heat(game: botbowl.Game, parent: Node) -> Node:
+    #noinspection PyTypeChecker
+    proc: procedures.ClearBoard = game.get_procedure()
+    assert type(proc) is procedures.ClearBoard
+
+    if game.state.weather == botbowl.WeatherType.SWELTERING_HEAT:
+        num_players = len(game.get_players_on_pitch())
+        with only_fixed_rolls(game, d6=[6]*num_players):
+            game.step()
+    else:
+        with only_fixed_rolls(game):
+            game.step()
+
+    return expand_none_action(game, parent)
 
 
 def handle_ko_wakeup(game: botbowl.Game, parent: Node) -> Node:
