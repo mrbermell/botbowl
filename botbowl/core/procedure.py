@@ -2646,7 +2646,7 @@ class MoveAction(Procedure):
 
             # Start new path?
             if self.steps is None:
-                self.steps = self.paths[action.position].steps
+                self.steps = copy(self.paths[action.position].steps)
                 self.orig_action_type = action.action_type
                 return False
 
