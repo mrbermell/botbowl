@@ -59,14 +59,18 @@ class ActionNode(Node):
 
     def __init__(self, game: botbowl.Game, parent: Optional[Node]):
         super().__init__(game, parent)
-        self.team = game.state.available_actions[0].team
-        self.is_home = game.active_team is game.state.home_team
-        assert self.is_home or game.active_team is game.state.away_team
+        self.team = game.active_team
+        if game.state.game_over:
+            self.team = game.state.home_team
+
+        self.is_home = self.team is game.state.home_team
+        assert self.is_home or self.team is game.state.away_team or game.state.game_over
 
         self.explored_actions = []
-        self.turn = game.active_team.state.turn
+        self.turn = self.team.state.turn
         self.info = None
-        self.simple_hash = ActionNode.hash_game_state(game)
+
+        self.hash_game_state(game)
 
     @property
     def depth(self):
@@ -109,16 +113,15 @@ class ActionNode(Node):
             node = node.parent
         return prob
 
-    @staticmethod
-    def hash_game_state(game: botbowl.Game) -> str:
+    def hash_game_state(self, game: botbowl.Game):
         s = ""
-        s += "h" if game.active_team is game.state.home_team else "a"
+        s += "h" if self.team is game.state.home_team else "a"
         s += str(game.state.round)
-        s += str(game.active_team.state.turn)
-        s += type(game.get_procedure()).__name__
+        s += str(self.team.state.turn)
+        s += type(game.get_procedure()).__name__ if not game.state.game_over else "GAME_OVER"
         s += f"{hash(game.get_ball_position())}-"
         s += " ".join(str(hash(p.position)) for p in game.get_players_on_pitch())+"-"
-        return s
+        self.simple_hash = s
 
 
 def get_action_node_children(node: Node) -> Iterable[ActionNode]:
@@ -128,6 +131,7 @@ def get_action_node_children(node: Node) -> Iterable[ActionNode]:
         return more_itertools.collapse(map(get_action_node_children, node.children))
     else:
         raise ValueError()
+
 
 class ChanceNode(Node):
     """
@@ -151,6 +155,7 @@ class ChanceNode(Node):
     def get_child_prob(self, child_node: Node) -> float:
         assert child_node in self.children
         return self.child_probability[self.children.index(child_node)]
+
 
 class SearchTree:
     game: botbowl.Game
