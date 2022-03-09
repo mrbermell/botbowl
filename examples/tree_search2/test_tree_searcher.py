@@ -3,6 +3,7 @@ from random import randint
 
 import numpy as np
 import pytest
+from botbowl.core import procedure
 from more_itertools import first
 from pytest import approx
 
@@ -304,3 +305,34 @@ def test_mcts():
 
     print("")
     print(f"{len(tree.all_action_nodes)=}")
+
+
+@pytest.mark.parametrize("max_ma", [2, 1])
+def test_blitz_reroll(max_ma):
+    if max_ma == 2:
+        fixed_d6 = [6, 1]
+    elif max_ma == 1:
+        fixed_d6 = [6, 6, 1]
+    else:
+        raise ValueError()
+
+    game, (player, victim, *_) = get_custom_game_turn(player_positions=[(2, 5)],
+                                                      opp_player_positions=[(5, 5), (4, 2), (4, 4), (4, 6), (4, 8)],
+                                                      ball_position=(5, 5),
+                                                      pathfinding_enabled=True)
+
+    player.role.ma = max_ma
+    game.state.home_team.state.rerolls = 3
+
+    game.step(Action(ActionType.START_BLITZ, position=player.position))
+
+    with only_fixed_rolls(game, d6=fixed_d6):
+        game.step(Action(ActionType.BLOCK, position=victim.position))
+
+    action = Action(ActionType.USE_REROLL)
+    assert type(game.get_procedure()) is procedure.Reroll
+    assert type(game.state.stack.items[-2]) is procedure.GFI
+
+    tree = SearchTree(game)
+    tree.expand_action_node(tree.root_node, action)
+    print("")

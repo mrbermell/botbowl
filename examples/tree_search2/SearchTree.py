@@ -508,15 +508,28 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         if is_pickup and current_step == final_step:
             remaining_current_step_rolls.pop()
 
-        num_current_step_remaining_rolls = len(list(filter(lambda x: type(x) in {procedures.GFI, procedures.Dodge}, game.state.stack.items)))
-        assert num_current_step_remaining_rolls in [1, 2]
-        remaining_current_step_rolls = remaining_current_step_rolls[-num_current_step_remaining_rolls:]
+        num_current_step_remaining_rolls = 0
+
+        gfi_proc = game.get_proc(procedures.GFI)
+        dodge_proc = game.get_proc(procedures.Dodge)
+        block_proc = game.get_proc(procedures.Block)
+
+        if dodge_proc is not None:
+            num_current_step_remaining_rolls += 1
+
+        if gfi_proc is not None and block_proc is None:
+            num_current_step_remaining_rolls += 1
+
+        remaining_current_step_rolls = remaining_current_step_rolls[len(remaining_current_step_rolls)-num_current_step_remaining_rolls:]
 
         probability_success = reduce(operator.mul, map(lambda d: (7-d)/6, remaining_current_step_rolls), 1.0)
         rolls = list(collapse(remaining_current_step_rolls))
 
         if current_step != final_step:
             step_count = game.get_step()
+            if block_proc is not None:
+                player.state.moves -= 1
+
             if player.position != current_step:
                 try:
                     game.move(player, current_step)

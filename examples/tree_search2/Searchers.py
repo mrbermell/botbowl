@@ -73,6 +73,8 @@ def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, e
 
     def continue_expansion(a_node: ActionNode) -> bool:
         tree.set_game_to_node(a_node)
+        if game.state.game_over:
+            return False         
         if game.actor is my_team and my_turn_num != a_node.turn:
             return False
         if game.state.home_team.state.score + game.state.away_team.state.score != scores:
