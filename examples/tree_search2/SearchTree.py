@@ -585,6 +585,13 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
             if len(game.get_available_actions())>0:
                 raise AttributeError("wrong")
             game.step()
+    if type(game.get_procedure()) is procedures.Reroll and len(game.get_available_actions()) == 0:
+        with only_fixed_rolls(game):
+            game.step()
+
+    if type(game.get_procedure()) is {procedures.Dodge, procedures.GFI}:
+        raise ValueError()
+
     fail_node = expand_none_action(game, new_parent, moving_handled=True)
     new_parent.connect_child(fail_node, 1 - probability_success)
 
