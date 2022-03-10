@@ -1,20 +1,16 @@
 import queue
+import numpy as np
 from typing import Optional
+from more_itertools import first
 
 import botbowl
 import botbowl.core.procedure as procedure
-import numpy as np
-from SearchTree import SearchTree
-from botbowl import Game, ActionType
-from botbowl.ai.env_render import EnvRenderer
-from botbowl.core.model import Agent, Action
-from examples.tree_search2.Samplers import MockPolicy
-from examples.tree_search2.Searchers import do_mcts_branch, HeuristicVector, get_node_value
-from more_itertools import first
+from botbowl import ActionType, Action
+import examples.tree_search as ts
 
 
-class SearchAgent(Agent):
-    tree: Optional[SearchTree]
+class SearchAgent(botbowl.Agent):
+    tree: Optional[ts.SearchTree]
     team: Optional[botbowl.Team]
     queued_actions: queue.Queue
 
@@ -23,12 +19,12 @@ class SearchAgent(Agent):
         self.tree = None
         self.queued_actions = queue.Queue()
         self.team = None
-        self.policy = MockPolicy()
-        self.weights = HeuristicVector(score=1, ball_marked=0.01, ball_carried=0.1, ball_position=0.001, tv_on_pitch=0)
+        self.policy = ts.MockPolicy()
+        self.weights = ts.HeuristicVector(score=1, ball_marked=0.01, ball_carried=0.1, ball_position=0.001, tv_on_pitch=0)
         self.width = None
         self.height = None
 
-    def act(self, game: Game) -> Action:
+    def act(self, game: botbowl.Game) -> Action:
         assert game.active_team is self.team
         scripted_action = self.scripted_action(game)
         if scripted_action is not None:
@@ -38,18 +34,18 @@ class SearchAgent(Agent):
             return scripted_action
 
         if self.tree is None:
-            self.tree = SearchTree(game)
+            self.tree = ts.SearchTree(game)
         else:
             self.tree.set_new_root(game)
 
         while True:
             for _ in range(5):
-                do_mcts_branch(self.tree, self.policy, self.weights, exploration_coeff=0.5)
+                ts.do_mcts_branch(self.tree, self.policy, self.weights, exploration_coeff=0.5)
 
             if self.tree.root_node.info.visits.sum() > 25 or game.get_seconds_left() < 5:
                 break
 
-        child_values = [get_node_value(child_node, self.weights) for child_node in self.tree.root_node.children]
+        child_values = [ts.get_node_value(child_node, self.weights) for child_node in self.tree.root_node.children]
         action = self.tree.root_node.explored_actions[np.argmax(child_values)]
 
         print(f"num_visits={self.tree.root_node.info.visits.sum()} action: {action}")
@@ -112,7 +108,7 @@ def main():
     agent = SearchAgent("searcher agent")
     agent.new_game(game, game.state.home_team)
     game.step(Action(ActionType.START_GAME))
-    renderer = EnvRenderer(env)
+    renderer = botbowl.ai.env_render.EnvRenderer(env)
 
     def calc_score():
         return game.state.home_team.state.score, game.state.away_team.state.score

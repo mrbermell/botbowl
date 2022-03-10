@@ -1,13 +1,13 @@
 import queue
 from functools import partial
-from operator import attrgetter, itemgetter
-from typing import Tuple, Union, Optional, Callable, List
+from operator import itemgetter
+from typing import Tuple, Union, Callable, List
 
 import numpy as np
 from pytest import approx
 
 import botbowl
-from SearchTree import SearchTree, ActionNode, ChanceNode, Node
+from examples.tree_search.SearchTree import SearchTree, ActionNode, ChanceNode, Node
 from collections import namedtuple
 
 HeuristicVector = namedtuple('HeuristicVector', ['score',

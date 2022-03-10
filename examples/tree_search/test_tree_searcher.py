@@ -1,21 +1,14 @@
-from copy import deepcopy
-from random import randint
-
 import numpy as np
 import pytest
-from botbowl.core import procedure
 from more_itertools import first
 from pytest import approx
 
+import examples.tree_search as ts
 from botbowl import Square, Action, ActionType, Skill, BBDieResult
-from examples.tree_search2.Samplers import ActionSampler, MockPolicy
-from examples.tree_search2.SearchTree import ActionNode, expand_action, ChanceNode, Node, SearchTree, \
-    get_action_node_children
-from examples.tree_search2.Searchers import get_best_action, get_heuristic, do_mcts_branch, HeuristicVector, \
-    get_node_value, show_best_path, MCTS_Info
+from botbowl.core import procedure
 from tests.util import get_custom_game_turn, only_fixed_rolls
 
-default_weights = HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
+default_weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
 
 
 @pytest.mark.parametrize("data", [(Square(2, 2), [1.0]),
@@ -34,16 +27,16 @@ def test_expand_move(data):
     game.step(Action(ActionType.START_MOVE, position=player.position))
 
     action = Action(ActionType.MOVE, position=move_target)
-    parent_action_node: ActionNode = ActionNode(game, parent=None)
-    next_node: Node = expand_action(game, action, parent_action_node)
+    parent_action_node: ts.ActionNode = ts.ActionNode(game, parent=None)
+    next_node: ts.Node = ts.expand_action(game, action, parent_action_node)
 
     assert next_node.parent is parent_action_node
 
     if len(outcome_probs) == 1:
-        assert type(next_node) is ActionNode
+        assert type(next_node) is ts.ActionNode
     else:
-        next_node: ChanceNode
-        assert type(next_node) is ChanceNode
+        next_node: ts.ChanceNode
+        assert type(next_node) is ts.ChanceNode
         assert sum(next_node.child_probability) == 1.0
         assert all(
             y == approx(x, abs=1e-12) for x, y in zip(sorted(next_node.child_probability), sorted(outcome_probs)))
@@ -64,12 +57,12 @@ def test_expand_pickup(data):
 
     game.step(Action(ActionType.START_MOVE, position=player.position))
     action = Action(ActionType.MOVE, position=ball_square)
-    parent_action_node: ActionNode = ActionNode(game, parent=None)
-    next_node: Node = expand_action(game, action, parent_action_node)
+    parent_action_node: ts.ActionNode = ts.ActionNode(game, parent=None)
+    next_node: ts.Node = ts.expand_action(game, action, parent_action_node)
 
-    next_node: ChanceNode
+    next_node: ts.ChanceNode
     assert next_node.parent is parent_action_node
-    assert type(next_node) is ChanceNode
+    assert type(next_node) is ts.ChanceNode
     assert sum(next_node.child_probability) == 1.0
     assert all(y == approx(x, abs=1e-12) for x, y in zip(sorted(next_node.child_probability), sorted(outcome_probs)))
 
@@ -81,15 +74,15 @@ def test_dodge_pickup_score():
                                          forward_model_enabled=True,
                                          pathfinding_enabled=True)
 
-    weights = HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0.001, tv_on_pitch=0)
+    weights = ts.HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0.001, tv_on_pitch=0)
 
-    tree = SearchTree(game)
-    policy = MockPolicy()
+    tree = ts.SearchTree(game)
+    policy = ts.MockPolicy()
 
     def search_select_step():
-        for i in range(100):
-            do_mcts_branch(tree, policy, weights, exploration_coeff=0.5)
-        info: MCTS_Info = tree.root_node.info
+        for i in range(10):
+            ts.do_mcts_branch(tree, policy, weights, exploration_coeff=0.5)
+        info: ts.MCTS_Info = tree.root_node.info
         print("   ")
         print_node(tree.root_node, weights)
         return info.actions[np.argmax(info.visits)]
@@ -121,7 +114,7 @@ def test_bounce():
 
     action = Action(ActionType.FOLLOW_UP, position=attacker.position)
 
-    tree = SearchTree(game)
+    tree = ts.SearchTree(game)
     n = tree.expand_action_node(tree.root_node, action)
 
 
@@ -134,15 +127,15 @@ def test_pickup_score():
     player.role.ma = 4
     game.set_available_actions()
 
-    weights = HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0, tv_on_pitch=0)
+    weights = ts.HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0, tv_on_pitch=0)
 
-    tree = SearchTree(game)
-    policy = MockPolicy()
+    tree = ts.SearchTree(game)
+    policy = ts.MockPolicy()
 
     def search_select_step():
         for i in range(40):
-            do_mcts_branch(tree, policy, weights, exploration_coeff=0.5)
-        info: MCTS_Info = tree.root_node.info
+            ts.do_mcts_branch(tree, policy, weights, exploration_coeff=0.5)
+        info: ts.MCTS_Info = tree.root_node.info
         print("   ")
         print_node(tree.root_node, weights)
         return info.actions[np.argmax(info.visits)]
@@ -154,7 +147,7 @@ def test_pickup_score():
 
     tree.set_new_root(game)
 
-    setup_node: ActionNode = first(filter(lambda n: n.simple_hash.find('Setup') > 0, tree.all_action_nodes))
+    setup_node: ts.ActionNode = first(filter(lambda n: n.simple_hash.find('Setup') > 0, tree.all_action_nodes))
     assert setup_node.get_accum_prob() == approx(2/3)
 
     a = search_select_step()
@@ -175,7 +168,7 @@ def test_expand_block():
                                                          opp_player_positions=[(6, 6)],
                                                          forward_model_enabled=True)
     defender.extra_skills.append(Skill.DODGE)
-    tree = SearchTree(game)
+    tree = ts.SearchTree(game)
 
     next_node, = tree.expand_action_node(tree.root_node, Action(ActionType.START_BLOCK, player=attacker))
 
@@ -208,7 +201,7 @@ def test_expand_throw_in():
 
     action = Action(ActionType.PUSH, position=Square(5, 0))
 
-    tree = SearchTree(game)
+    tree = ts.SearchTree(game)
     tree.expand_action_node(tree.root_node, action)
     assert len(tree.all_action_nodes) == 2
 
@@ -226,7 +219,7 @@ def test_set_new_root():
     action_p1_1 = Action(ActionType.START_MOVE, position=player1.position)
     action_p1_2 = Action(ActionType.MOVE, position=Square(1, 5))
 
-    tree = SearchTree(deepcopy(game))
+    tree = ts.SearchTree(game)
     assert tree.root_node.depth == 0
 
     # Move player 2
@@ -278,7 +271,7 @@ def print_node(node, weights):
             a_index = node.explored_actions.index(action)
             child_node = node.children[a_index]
             assert child_node is not None
-            expected_value = get_node_value(child_node, weights)
+            expected_value = ts.get_node_value(child_node, weights)
             action.player = None
             print(f"{action}, {visits=}, avg(AV)={action_value/visits:.2f}, EV={expected_value:.2f}")
 
@@ -289,12 +282,12 @@ def test_mcts():
                                    ball_position=(6, 6),
                                    pathfinding_enabled=True)
 
-    weights = HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
+    weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
 
-    tree = SearchTree(game)
-    policy = MockPolicy()
+    tree = ts.SearchTree(game)
+    policy = ts.MockPolicy()
     for i in range(20):
-        do_mcts_branch(tree, policy, weights, exploration_coeff=5)
+        ts.do_mcts_branch(tree, policy, weights, exploration_coeff=5)
 
     print("")
     mcts_info = tree.root_node.info
@@ -333,6 +326,6 @@ def test_blitz_reroll(max_ma):
     assert type(game.get_procedure()) is procedure.Reroll
     assert type(game.state.stack.items[-2]) is procedure.GFI
 
-    tree = SearchTree(game)
+    tree = ts.SearchTree(game)
     tree.expand_action_node(tree.root_node, action)
     print("")

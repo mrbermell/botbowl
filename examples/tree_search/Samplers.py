@@ -1,13 +1,13 @@
+import numpy as np
 from abc import ABC, abstractmethod
 from random import shuffle
 from typing import Optional, List, Iterable, Tuple, Callable, Dict
-
-import numpy as np
 from more_itertools import collapse
 
 import botbowl
 from botbowl import ActionType, Action, EnvConf, Setup
 from tests.util import get_game_turn
+from examples.tree_search import ActionNode
 
 NodeAction = botbowl.Action
 
