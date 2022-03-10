@@ -237,12 +237,12 @@ def test_set_new_root():
 
     assert new_node.depth == 1
     assert new_nodes[0].depth == 2
-    assert len(tree.all_action_nodes) == 2 + 4 + 1 + 7
+    assert len(tree.all_action_nodes) == 2 + 4 + 1 + 13
 
     game.step(action_p1_1)
     tree.set_new_root(game)
 
-    assert len(tree.all_action_nodes) == 8
+    assert len(tree.all_action_nodes) == 14
     assert new_node is tree.root_node
     assert new_node.depth == 0
     assert new_nodes[0].depth == 1
