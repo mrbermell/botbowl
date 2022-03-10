@@ -123,6 +123,11 @@ class ActionNode(Node):
         s += " ".join(str(hash(p.position)) for p in game.get_players_on_pitch())+"-"
         self.simple_hash = s
 
+    def __repr__(self):
+        team = "home" if self.is_home else "away"
+        return f"ActionNode({team}, {self.top_proc}, depth={self.depth}, acc_prob={self.get_accum_prob():.3f}, " \
+               f"len(children)={len(self.children)})"
+
 
 def get_action_node_children(node: Node) -> Iterable[ActionNode]:
     if isinstance(node, ActionNode):
