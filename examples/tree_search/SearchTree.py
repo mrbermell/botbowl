@@ -120,7 +120,7 @@ class ActionNode(Node):
         s += str(self.team.state.turn)
         s += type(game.get_procedure()).__name__ if not game.state.game_over else "GAME_OVER"
         s += f"{hash(game.get_ball_position())}-"
-        s += " ".join(str(hash(p.position)) for p in game.get_players_on_pitch())+"-"
+        s += " ".join(str(hash(p.position)) for p in game.get_players_on_pitch()) + "-"
         self.simple_hash = s
 
     def __repr__(self):
@@ -214,21 +214,44 @@ class SearchTree:
         assert self.current_node.step_nbr == self.game.get_step(), \
             f"gamestate {self.game.get_step()} and SearchTree {self.current_node.step_nbr} are not synced, big fault!"
 
-        assert target_node in self.all_action_nodes, "target node is not in SearchTree, major fault"
-
         if target_node is self.current_node:
             return
 
-        # Always revert to root node to begin with. Could be improved...
-        self.game.revert(self.root_node.step_nbr)
-        self.current_node = self.root_node
-        assert self.root_node.step_nbr == self.game.get_step()
-
         if target_node is self.root_node:
+            self.game.revert(self.root_node.step_nbr)
+            self.current_node = target_node
             return
 
-        for node in reversed( list(target_node.get_all_parents(include_self=True))):
-            self.game.forward(node.change_log)
+        assert target_node in self.all_action_nodes, "target node is not in SearchTree, major fault"
+
+        if self.current_node.step_nbr < target_node.step_nbr \
+                and self.current_node in itertools.takewhile(lambda n: n.step_nbr >= self.current_node.step_nbr,
+                                                             target_node.get_all_parents(include_self=False)):
+
+            # forward current_node -> target_node
+            nodes_to_forward = itertools.takewhile(lambda n: n is not self.current_node,
+                                                   target_node.get_all_parents(include_self=True))
+            for node in reversed(list(nodes_to_forward)):
+                self.game.forward(node.change_log)
+
+        elif self.current_node.step_nbr > target_node.step_nbr \
+                and target_node in itertools.takewhile(lambda n: n.step_nbr >= target_node.step_nbr,
+                                                       self.current_node.get_all_parents(include_self=False)):
+
+            self.game.revert(target_node.step_nbr)
+
+        else:  # not in same branch. We need to revert back to a common node and the forward to target
+            current_node_parents = set(self.current_node.get_all_parents(include_self=False))
+            first_common_node = more_itertools.first_true(iterable=target_node.get_all_parents(include_self=True),
+                                                          pred=lambda n: n in current_node_parents)
+
+            self.game.revert(first_common_node.step_nbr)
+
+            nodes_to_forward = itertools.takewhile(lambda n: n is not first_common_node,
+                                                   target_node.get_all_parents(include_self=True))
+
+            for node in reversed(list(nodes_to_forward)):
+                self.game.forward(node.change_log)
 
         self.current_node = target_node
 
@@ -399,7 +422,7 @@ def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
         assert game.get_step() == new_parent.step_nbr
 
     sum_prob = sum(new_parent.child_probability)
-    #new_parent.child_probability = [prob/sum_prob for prob in new_parent.child_probability]
+    # new_parent.child_probability = [prob/sum_prob for prob in new_parent.child_probability]
 
     assert sum(new_parent.child_probability) == approx(1.0, abs=1e-9)
     assert game.get_step() == new_parent.step_nbr
@@ -458,7 +481,8 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         final_step = move_action_proc.steps[-1]
     else:
         if is_blitz:
-            block_proc: procedures.Block = first(filter(lambda proc: type(proc) is procedures.Block, game.state.stack.items))
+            block_proc: procedures.Block = first(
+                filter(lambda proc: type(proc) is procedures.Block, game.state.stack.items))
             final_step = block_proc.defender.position
         elif is_handoff:
             raise ValueError()
@@ -525,9 +549,10 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         if gfi_proc is not None and block_proc is None:
             num_current_step_remaining_rolls += 1
 
-        remaining_current_step_rolls = remaining_current_step_rolls[len(remaining_current_step_rolls)-num_current_step_remaining_rolls:]
+        remaining_current_step_rolls = remaining_current_step_rolls[
+                                       len(remaining_current_step_rolls) - num_current_step_remaining_rolls:]
 
-        probability_success = reduce(operator.mul, map(lambda d: (7-d)/6, remaining_current_step_rolls), 1.0)
+        probability_success = reduce(operator.mul, map(lambda d: (7 - d) / 6, remaining_current_step_rolls), 1.0)
         rolls = list(collapse(remaining_current_step_rolls))
 
         if current_step != final_step:
@@ -543,10 +568,10 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
             new_path = pf.get_safest_path(game, player, final_step, blitz=is_blitz)
             game.revert(step_count)
 
-            #try:
+            # try:
             #    # assert new_path.steps == path.steps[-len(new_path):]  this assert can't be made because of small randomness in pathfinder
             #    assert list(collapse(new_path.rolls)) == list(collapse(path.rolls[-len(new_path):])), f"{new_path.rolls} != {path.rolls[-len(new_path):]}"
-            #except AssertionError as e:
+            # except AssertionError as e:
             #    raise e
 
             try:
@@ -567,11 +592,10 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     except ValueError as e:
         raise e
 
-
     # STEP UNTIL FAILURE (possibly no steps at all)
-    with only_fixed_rolls(game, d6=[6]*index_of_failure):
+    with only_fixed_rolls(game, d6=[6] * index_of_failure):
         while len(botbowl.D6.FixedRolls) > 0:
-            if len(game.get_available_actions())>0:
+            if len(game.get_available_actions()) > 0:
                 raise AttributeError("wrong")
             game.step()
 
@@ -579,9 +603,10 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     debug_step_count = game.get_step()
 
     # SUCCESS SCENARIO
-    with only_fixed_rolls(game, d6=[6]*(len(rolls) - index_of_failure)):
+    with only_fixed_rolls(game, d6=[6] * (len(rolls) - index_of_failure)):
         while len(botbowl.D6.FixedRolls) > 0:
-            if type(game.get_procedure()) not in {procedures.GFI, procedures.Block, procedures.Dodge, procedures.Move, procedures.MoveAction, procedures.BlitzAction}:
+            if type(game.get_procedure()) not in {procedures.GFI, procedures.Block, procedures.Dodge, procedures.Move,
+                                                  procedures.MoveAction, procedures.BlitzAction}:
                 raise AttributeError("wrong")
             if len(game.get_available_actions()) > 0:
                 raise AttributeError("wrong")
@@ -600,7 +625,7 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 
     with only_fixed_rolls(game, d6=fail_rolls):
         while len(botbowl.D6.FixedRolls) > 0:
-            if len(game.get_available_actions())>0:
+            if len(game.get_available_actions()) > 0:
                 raise AttributeError("wrong")
             game.step()
     if type(game.get_procedure()) is procedures.Reroll and len(game.get_available_actions()) == 0:
@@ -648,7 +673,6 @@ def expand_injury(game: botbowl.Game, parent: Node) -> Node:
 
 
 def expand_block(game: botbowl.Game, parent: Node) -> Node:
-
     proc: botbowl.Block = game.get_procedure()
     assert type(proc) is botbowl.Block
     assert not proc.gfi, "Can't handle GFI:s here =( "
@@ -762,13 +786,13 @@ def expand_catch(game: botbowl.Game, parent: Node) -> Node:
 
 
 def handle_sweltering_heat(game: botbowl.Game, parent: Node) -> Node:
-    #noinspection PyTypeChecker
+    # noinspection PyTypeChecker
     proc: procedures.ClearBoard = game.get_procedure()
     assert type(proc) is procedures.ClearBoard
 
     if game.state.weather == botbowl.WeatherType.SWELTERING_HEAT:
         num_players = len(game.get_players_on_pitch())
-        with only_fixed_rolls(game, d6=[6]*num_players):
+        with only_fixed_rolls(game, d6=[6] * num_players):
             game.step()
     else:
         with only_fixed_rolls(game):
@@ -782,7 +806,7 @@ def handle_ko_wakeup(game: botbowl.Game, parent: Node) -> Node:
     active_proc: procedures.PreKickoff = game.get_procedure()
     assert type(active_proc) is procedures.PreKickoff
 
-    d6_fixes = [1]*len(game.get_knocked_out(active_proc.team))
+    d6_fixes = [1] * len(game.get_knocked_out(active_proc.team))
 
     with only_fixed_rolls(game, d6=d6_fixes):
         while active_proc is game.get_procedure():
