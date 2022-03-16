@@ -201,7 +201,7 @@ class SearchTree:
                 break
 
         if found_node is None:
-            self.__init__(deepcopy(game), self.on_every_action_node)
+            self.__init__(game, self.on_every_action_node)
         else:
             self.root_node = found_node
             self.root_node.make_root()
