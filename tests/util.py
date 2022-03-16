@@ -9,20 +9,20 @@ game_turn_empty = {}
 game_turn_full = {}
 
 
-def get_game_turn(seed=0, empty=False, home_team: str = 'human', away_team: str = 'orc'):
+def get_game_turn(seed=0, empty=False, home_team: str = 'human', away_team: str = 'orc', size: int = 11):
     D3.FixedRolls = []
     D6.FixedRolls = []
     D8.FixedRolls = []
     BBDie.FixedRolls = []
 
-    key = f"{seed} {home_team} {away_team}"
+    key = f"{seed} {home_team} {away_team} {size}"
     if empty:
         if key in game_turn_empty:
             return deepcopy(game_turn_empty[key])
     else:
         if key in game_turn_full:
             return deepcopy(game_turn_full[key])
-    config = load_config("gym-11")
+    config = load_config(f"gym-{size}")
     ruleset = load_rule_set(config.ruleset)
     home = load_team_by_filename(home_team, ruleset)
     away = load_team_by_filename(away_team, ruleset)
@@ -34,7 +34,7 @@ def get_game_turn(seed=0, empty=False, home_team: str = 'human', away_team: str 
     game.step(Action(ActionType.START_GAME))
     game.step(Action(ActionType.HEADS))
     game.step(Action(ActionType.KICK))
-    game.step(Action(ActionType.SETUP_FORMATION_ZONE))
+    game.step(Action(ActionType.SETUP_FORMATION_SPREAD))
     game.step(Action(ActionType.END_SETUP))
     game.step(Action(ActionType.SETUP_FORMATION_WEDGE))
     game.step(Action(ActionType.END_SETUP))
@@ -56,7 +56,7 @@ Position = Union[Square, Tuple[int, int]]
 
 def get_custom_game_turn(player_positions: List[Position], opp_player_positions: Optional[List[Position]] = None,
                          ball_position: Optional[Position] = None, weather: WeatherType = WeatherType.NICE,
-                         rerolls: int = 0, forward_model_enabled=False, pathfinding_enabled=False) \
+                         rerolls: int = 0, forward_model_enabled=False, pathfinding_enabled=False, size: int = 11) \
         -> Tuple[Game, Tuple[Player, ...]]:
     """
     :param player_positions: places human linemen of active team in these squares
@@ -66,9 +66,10 @@ def get_custom_game_turn(player_positions: List[Position], opp_player_positions:
     :param rerolls: number of rerolls
     :param forward_model_enabled:
     :param pathfinding_enabled:
+    :param size: pitch size
     :return: tuple with created game object followed by all the placed players
     """
-    game = get_game_turn(empty=True, home_team='human', away_team='human')
+    game = get_game_turn(empty=True, home_team='human', away_team='human', size=size)
     team = game.get_agent_team(game.actor)
     team_players = [player for player in team.players if player.role.name == "Lineman"]
 
