@@ -62,19 +62,31 @@ def create_gamestate_hash(game: botbowl.Game) -> str:
     """
     Based the GameState, provides a str that can be used for fast and approximate game state comparisons
     """
-    assert len(game.state.available_actions) > 0
+    assert len(game.state.available_actions) > 0 or game.state.game_over
 
     s = ""
     s += "h" if game.active_team is game.state.home_team else "a"
     s += str(game.state.round)
     s += str(game.state.half)
-    s += str(game.active_team.state.turn)
     s += str(game.state.home_team.state.score)
     s += str(game.state.away_team.state.score)
-    s += type(game.get_procedure()).__name__ if not game.state.game_over else "GAME_OVER"
+    s += f"{len(game.state.reports):4.0f}"
+    if not game.state.game_over:
+        proc = game.get_procedure()
+        s += f" {type(proc).__name__} "
+        if isinstance(proc, botbowl.core.procedure.Setup):
+            s += str(1*proc.reorganize)
+        elif isinstance(proc, botbowl.core.procedure.Reroll):
+            s += f"({type(proc.context).__name__})"
+    else:
+        s += "GAME_OVER"
+
     ball_pos = game.get_ball_position()
-    s += create_position_hash(ball_pos) if ball_pos is not None else " "
+    s += f"ball={create_position_hash(ball_pos)} " if ball_pos is not None else " "
+
+    for ac in game.get_available_actions():
+        s += f" {ac.action_type.name}{len(ac.positions)},{hash(tuple(ac.positions))}"
+
     s += "".join(create_playerstate_hash(game, p) for p in game.get_players_on_pitch())
-    s += "".join(f"{ac}" for ac in game.get_available_actions())
 
     return s
