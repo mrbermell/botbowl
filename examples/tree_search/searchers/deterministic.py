@@ -9,58 +9,9 @@ from pytest import approx
 
 import botbowl
 from examples.tree_search.SearchTree import SearchTree, ActionNode, ChanceNode, Node
+import examples.tree_search.searchers.search_util as search_util
+
 from collections import namedtuple
-
-HeuristicVector = namedtuple('HeuristicVector', ['score',
-                                                 'tv_on_pitch',
-                                                 'ball_position',
-                                                 'ball_carried',
-                                                 'ball_marked'])
-
-
-def get_heuristic(game: botbowl.Game) -> HeuristicVector:
-    """
-    Heuristic based on game state, calculated from home teams perspective
-    zero sum, meaning away team's heuristic is negative of home team's heuristic
-    :returns: array with different heuristics, multiply it with
-    """
-    score, tv_on_pitch, ball_position, ball_carried, ball_marked = 0.0, 0.0, 0.0, 0.0, 0.0
-    home = game.state.home_team
-    away = game.state.away_team
-
-    score += home.state.score - away.state.score
-
-    tv_on_pitch += sum(p.role.cost for p in game.get_players_on_pitch(team=home))
-    tv_on_pitch -= sum(p.role.cost for p in game.get_players_on_pitch(team=away))
-    tv_on_pitch /= 50000.0  # normalized to cost of lineman
-
-    ball = game.get_ball()
-    if ball is not None and ball.position is not None:
-        ball_position -= ball.position.x  # negative because home team scores at x = 0
-
-        home_marking_ball = len(game.get_adjacent_players(ball.position, team=home, standing=True)) > 0
-        away_marking_ball = len(game.get_adjacent_players(ball.position, team=away, standing=True)) > 0
-
-        if ball.is_carried:
-            ball_carrier = game.get_player_at(ball.position)
-            if ball_carrier.team == home:
-                ball_carried += 1
-                ball_marked -= away_marking_ball
-            elif ball_carrier.team == away:
-                ball_carried -= 1
-                ball_marked += home_marking_ball
-        else:
-            ball_marked += (home_marking_ball - away_marking_ball)
-
-    return HeuristicVector(score=score,
-                           tv_on_pitch=tv_on_pitch,
-                           ball_position=ball_position,
-                           ball_carried=ball_carried,
-                           ball_marked=ball_marked)
-
-
-
-
 
 
 MCTS_Info = namedtuple('MCTS_Info', 'probabilities actions action_values visits heuristic reward state_value')
@@ -75,36 +26,9 @@ class ContinueCondition:
     opp_as_final_turn: bool = True
 
 
-def get_score_sum(g):
-    return g.state.home_team.state.score + g.state.away_team.state.score
-
-
-def get_team_turn_num(g: botbowl.Game, team: botbowl.Team) -> int:
-    return g.state.half * g.config.rounds + team.state.turn
-
-
-def continue_expansion(node: ActionNode, game, cc_cond, scores, half, end_turn_at, team) -> bool:
-    if game.state.game_over:
-        return False
-    if cc_cond.single_drive and (get_score_sum(game) != scores or game.state.half != half):
-        return False
-    if get_team_turn_num(game, team) >= end_turn_at:
-        return False
-
-    # This ends the search after {my_team} has played its final turn, if opp_as_final_turn
-    if (not cc_cond.opp_as_final_turn) and team.state.turn == end_turn_at - 1:
-        turn = game.current_turn
-        if turn is not None and turn.team is not team:
-            return False
-
-    if cc_cond.probability > 0 and node.get_accum_prob() < cc_cond.probability:
-        return False
-    return True
-
-
 def deterministic_tree_search_rollout(tree: SearchTree,
                                       policy: Policy,
-                                      weights: HeuristicVector,
+                                      weights: search_util.HeuristicVector,
                                       exploration_coeff=1,
                                       cc_cond: ContinueCondition = None) -> None:
     if cc_cond is None:
@@ -114,23 +38,24 @@ def deterministic_tree_search_rollout(tree: SearchTree,
     tree.set_game_to_node(tree.root_node)
     game = tree.game
 
-    scores = get_score_sum(game)
+    scores = search_util.get_score_sum(game)
     half = game.state.half
     my_team = game.active_team
 
     turn_counter_adjust = 1 * (game.get_proc(botbowl.core.procedure.Kickoff) is not None or
                                game.get_proc(botbowl.core.procedure.LandKick) is not None)
-    end_turn_at = get_team_turn_num(game, my_team) + turn_counter_adjust + cc_cond.turns
+    end_turn_at = search_util.get_team_turn_num(game, my_team) + turn_counter_adjust + cc_cond.turns
 
-    _continue_expension = partial(continue_expansion, game=game, cc_cond=cc_cond, scores=scores, half=half,
-                                  end_turn_at=end_turn_at, team=my_team)
+    continue_expension = partial(search_util.continue_expansion,
+                                 game=game, cc_cond=cc_cond, scores=scores, half=half,
+                                 end_turn_at=end_turn_at, team=my_team)
 
     def setup_node(new_node: ActionNode):
         if type(new_node.info) is not MCTS_Info:
             tree.set_game_to_node(new_node)
             _, probabilities, actions_ = policy(tree.game)
             num_actions = len(actions_)
-            heuristic = np.array(get_heuristic(tree.game))
+            heuristic = np.array(search_util.get_heuristic(tree.game))
             reward = np.zeros(shape=heuristic.shape)
 
             if new_node.parent is not None:
@@ -193,13 +118,13 @@ def deterministic_tree_search_rollout(tree: SearchTree,
         for child_node in node.get_children_from_action(action):
             setup_node(child_node)
             tree.set_game_to_node(child_node)
-            if _continue_expension(child_node):
+            if continue_expension(child_node):
                 node_queue.put(child_node)
             else:
                 back_propagate(child_node)
 
 
-def get_node_value(node: Union[Node, ActionNode, ChanceNode], weights: HeuristicVector) -> float:
+def get_node_value(node: Union[Node, ActionNode, ChanceNode], weights: search_util.HeuristicVector) -> float:
     recursive_self = partial(get_node_value, weights=weights)
 
     if isinstance(node, ActionNode):
@@ -217,7 +142,7 @@ def get_node_value(node: Union[Node, ActionNode, ChanceNode], weights: Heuristic
         raise ValueError()
 
 
-def get_best_action(root_node: ActionNode, weights: HeuristicVector) -> botbowl.Action:
+def get_best_action(root_node: ActionNode, weights: search_util.HeuristicVector) -> botbowl.Action:
     assert len(root_node.children) == len(root_node.explored_actions)
 
     child_node_values = (get_node_value(node, weights) for node in root_node.children)
@@ -230,7 +155,7 @@ def get_best_action(root_node: ActionNode, weights: HeuristicVector) -> botbowl.
     return root_node.explored_actions[action_index]
 
 
-def show_best_path(tree: SearchTree, weights: HeuristicVector):
+def show_best_path(tree: SearchTree, weights: search_util.HeuristicVector):
     node = tree.root_node
     tree.set_game_to_node(node)
     report_index = len(tree.game.state.reports)
