@@ -1,11 +1,13 @@
+import gym
 import numpy as np
 import pytest
 from more_itertools import first
 from pytest import approx
 
 import examples.tree_search as ts
-from botbowl import Square, Action, ActionType, Skill, BBDieResult
+from botbowl import Square, Action, ActionType, Skill, BBDieResult, botbowl
 from botbowl.core import procedure
+from examples.tree_search import hashmap
 from tests.util import get_custom_game_turn, only_fixed_rolls
 
 default_weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
@@ -330,3 +332,68 @@ def test_blitz_reroll(max_ma):
     tree = ts.SearchTree(game)
     tree.expand_action_node(tree.root_node, action)
     print("")
+
+
+@pytest.mark.parametrize("name", ['botbowl-v4',
+                                  'botbowl-11-v4',
+                                  'botbowl-7-v4',
+                                  'botbowl-5-v4',
+                                  'botbowl-3-v4',
+                                  'botbowl-1-v4'])
+def test_game_state_hash(name):
+    env = gym.make(name)
+    random_bot = botbowl.RandomBot("randombot")
+    for _ in range(10):
+        env.reset()
+        game: botbowl.Game = env.game
+        game.away_agent.human = True
+        game.home_agent.human = True
+
+        assert len(game.get_available_actions()) > 0
+
+        hashes = set()
+        hashes.add(hashmap.create_gamestate_hash(game))
+        latest_hashes = [hashmap.create_gamestate_hash(game)]
+        end_setup = False
+
+        while not game.state.game_over:
+            if isinstance(game.get_procedure(), botbowl.core.procedure.Setup):
+                if game.get_procedure().reorganize:
+                    end_setup = True
+
+            if end_setup:
+                action = Action(ActionType.END_SETUP)
+                end_setup = False
+            else:
+                aa_types = {ac.action_type for ac in game.get_available_actions()}
+                if ActionType.SETUP_FORMATION_WEDGE in aa_types:
+                    action = Action(ActionType.SETUP_FORMATION_WEDGE)
+                    end_setup = True
+                elif ActionType.SETUP_FORMATION_SPREAD in aa_types:
+                    action = Action(ActionType.SETUP_FORMATION_SPREAD)
+                    end_setup = True
+                else:
+                    action = random_bot.act(game)
+                    while action.action_type == ActionType.UNDO:
+                        action = random_bot.act(game)
+
+            game.step(action)
+            new_hash = hashmap.create_gamestate_hash(game)
+            if new_hash in hashes:
+                for r in game.state.reports:
+                    print(r)
+                print(f"action={action}")
+                print(f"new hash:\n{new_hash}")
+
+                print("Latest hashes:")
+                if len(latest_hashes) > 5:
+                    hashes_to_print = latest_hashes[-5:]
+                else:
+                    hashes_to_print = latest_hashes
+                for h in reversed(hashes_to_print):
+                    print(h)
+
+                raise AssertionError("not unique game state")
+            assert new_hash not in hashes
+            hashes.add(new_hash)
+            latest_hashes.append(new_hash)

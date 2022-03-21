@@ -17,7 +17,7 @@ import botbowl.core.forward_model as forward_model
 import botbowl.core.pathfinding.python_pathfinding as pf
 from botbowl import Skill, BBDieResult
 from tests.util import only_fixed_rolls
-from examples.tree_search.hashmap import HashMap
+from examples.tree_search.hashmap import HashMap, create_gamestate_hash
 
 accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
 
@@ -70,7 +70,7 @@ class ActionNode(Node):
         self.turn = self.team.state.turn
         self.info = None
 
-        self.hash_game_state(game)
+        self.simple_hash = create_gamestate_hash(game)
 
     @property
     def depth(self):
@@ -116,16 +116,6 @@ class ActionNode(Node):
                 prob *= node.parent.get_child_prob(node)
             node = node.parent
         return prob
-
-    def hash_game_state(self, game: botbowl.Game):
-        s = ""
-        s += "h" if self.team is game.state.home_team else "a"
-        s += str(game.state.round)
-        s += str(self.team.state.turn)
-        s += type(game.get_procedure()).__name__ if not game.state.game_over else "GAME_OVER"
-        s += f"{hash(game.get_ball_position())}-"
-        s += " ".join(str(hash(p.position)) for p in game.get_players_on_pitch()) + "-"
-        self.simple_hash = s
 
     def __repr__(self):
         team = "home" if self.is_home else "away"
@@ -200,12 +190,16 @@ class SearchTree:
         for node in self.all_action_nodes[target_node]:
             self.set_game_to_node(node)
             diff = self.game.state.compare(game.state)
+
+            diff = filter(lambda d: d[:13] != 'state.reports', diff)
+            diff = list(diff)
+
             if len(diff) == 0:
                 found_node = node
                 break
 
         if found_node is None:
-            self.__init__(deepcopy(game), self.on_every_action_node)
+            self.__init__(game, self.on_every_action_node)
         else:
             self.root_node = found_node
             self.root_node.make_root()
