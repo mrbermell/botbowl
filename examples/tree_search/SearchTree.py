@@ -104,10 +104,14 @@ class ActionNode(Node):
         child = self.children[self.explored_actions.index(action)]
         return get_action_node_children(child)
 
-    def get_accum_prob(self, start_prob=1.0):
+    def get_accum_prob(self, *, end_node=None):
+        """
+        :param end_node: node where search ends, if None (default) it ends at the root of the tree
+        :returns: accumulated probability from chance nodes
+        """
         node = self
-        prob = start_prob
-        while node.parent is not None:
+        prob = 1.0
+        while node.parent is not end_node:
             if isinstance(node.parent, ChanceNode):
                 prob *= node.parent.get_child_prob(node)
             node = node.parent

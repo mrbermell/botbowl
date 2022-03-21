@@ -1,38 +1,22 @@
 import queue
 from functools import partial
 from operator import itemgetter
-from typing import Tuple, Union, Callable, List
-import dataclasses
-
-import numpy as np
-from pytest import approx
+from typing import Union
 
 import botbowl
-from examples.tree_search.SearchTree import SearchTree, ActionNode, ChanceNode, Node
 import examples.tree_search.searchers.search_util as search_util
-
-from collections import namedtuple
-
-
-MCTS_Info = namedtuple('MCTS_Info', 'probabilities actions action_values visits heuristic reward state_value')
-Policy = Callable[[botbowl.Game], Tuple[float, np.ndarray, List[botbowl.Action]]]
-
-
-@dataclasses.dataclass
-class ContinueCondition:
-    probability: float = 0.02
-    single_drive: bool = True
-    turns: int = 1  # Note: turn counter increases after kickoff is resolved!
-    opp_as_final_turn: bool = True
+import numpy as np
+from examples.tree_search.SearchTree import SearchTree, ActionNode, ChanceNode, Node
+from pytest import approx
 
 
 def deterministic_tree_search_rollout(tree: SearchTree,
-                                      policy: Policy,
+                                      policy: search_util.Policy,
                                       weights: search_util.HeuristicVector,
                                       exploration_coeff=1,
-                                      cc_cond: ContinueCondition = None) -> None:
+                                      cc_cond: search_util.ContinueCondition = None) -> None:
     if cc_cond is None:
-        cc_cond = ContinueCondition()
+        cc_cond = search_util.ContinueCondition()
 
     weights = np.array(weights)
     tree.set_game_to_node(tree.root_node)
@@ -51,7 +35,7 @@ def deterministic_tree_search_rollout(tree: SearchTree,
                                  end_turn_at=end_turn_at, team=my_team)
 
     def setup_node(new_node: ActionNode):
-        if type(new_node.info) is not MCTS_Info:
+        if type(new_node.info) is not search_util.MCTS_Info:
             tree.set_game_to_node(new_node)
             _, probabilities, actions_ = policy(tree.game)
             num_actions = len(actions_)
@@ -64,13 +48,13 @@ def deterministic_tree_search_rollout(tree: SearchTree,
                         reward = heuristic - parent.info.heuristic
                         break
 
-            new_node.info = MCTS_Info(probabilities=probabilities / probabilities.mean(),
-                                      actions=actions_,
-                                      action_values=np.zeros((num_actions, len(reward))),
-                                      visits=np.zeros(num_actions, dtype=np.int),
-                                      heuristic=heuristic,
-                                      reward=reward,
-                                      state_value=0)
+            new_node.info = search_util.MCTS_Info(probabilities=probabilities / probabilities.mean(),
+                                                  actions=actions_,
+                                                  action_values=np.zeros((num_actions, len(reward))),
+                                                  visits=np.zeros(num_actions, dtype=np.int),
+                                                  heuristic=heuristic,
+                                                  reward=reward,
+                                                  state_value=0)
 
     def back_propagate(final_node: ActionNode):
         propagated_value = np.copy(final_node.info.reward)  # todo: add final_node.info.state_value too

@@ -276,7 +276,9 @@ def print_node(node, weights):
             print(f"{action}, {visits=}, avg(AV)={action_value/visits:.2f}, EV={expected_value:.2f}")
 
 
-def test_mcts():
+@pytest.mark.parametrize("tree_searcher", [ts.deterministic_tree_search_rollout,
+                                           ts.mcts_ucb_rollout])
+def test_mcts(tree_searcher):
     game, _ = get_custom_game_turn(player_positions=[(6, 6), (7, 7)],
                                    opp_player_positions=[(5, 6)],
                                    ball_position=(6, 6),
@@ -286,18 +288,17 @@ def test_mcts():
 
     tree = ts.SearchTree(game)
     policy = ts.MockPolicy()
-    for i in range(20):
-        ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=5)
+    while len(tree.all_action_nodes) < 2000:
+        tree_searcher(tree, policy, weights, exploration_coeff=5)
 
     print("")
+    print(f"{tree_searcher.__name__}, num explored nodes = {len(tree.all_action_nodes)}")
     mcts_info = tree.root_node.info
     for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
         action.player = None
-        action_value = np.dot(action_val, weights)
-        print(f"{action}, {visits=}, {action_value=:.2f}")
-
+        action_value = np.dot(action_val, weights)/(visits + (visits == 0))
+        print(f"{action}, {visits=}, {action_value=:.4f}")
     print("")
-    print(f"{len(tree.all_action_nodes)=}")
 
 
 @pytest.mark.parametrize("max_ma", [2, 1])

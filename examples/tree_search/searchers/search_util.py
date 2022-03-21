@@ -1,13 +1,26 @@
 import botbowl
 from collections import namedtuple
 from examples.tree_search.SearchTree import ActionNode
-
+import dataclasses
+from typing import Callable, Tuple, List
+import numpy as np
 
 HeuristicVector = namedtuple('HeuristicVector', ['score',
                                                  'tv_on_pitch',
                                                  'ball_position',
                                                  'ball_carried',
                                                  'ball_marked'])
+
+MCTS_Info = namedtuple('MCTS_Info', 'probabilities actions action_values visits heuristic reward state_value')
+Policy = Callable[[botbowl.Game], Tuple[float, np.ndarray, List[botbowl.Action]]]
+
+
+@dataclasses.dataclass
+class ContinueCondition:
+    probability: float = 0.02
+    single_drive: bool = True
+    turns: int = 1  # Note: turn counter increases after kickoff is resolved!
+    opp_as_final_turn: bool = True
 
 
 def get_score_sum(g):
@@ -40,7 +53,7 @@ def continue_expansion(node: ActionNode, game, cc_cond, scores, half, end_turn_a
 def get_heuristic(game: botbowl.Game) -> HeuristicVector:
     """
     Heuristic based on game state, calculated from home teams perspective
-    zero sum, meaning away team's heuristic is negative of home team's heuristic
+    zero-sum, meaning away team's heuristic is negative of home team's heuristic
     :returns: array with different heuristics, multiply it with
     """
     score, tv_on_pitch, ball_position, ball_carried, ball_marked = 0.0, 0.0, 0.0, 0.0, 0.0
