@@ -2,6 +2,7 @@ import queue
 from functools import partial
 from operator import itemgetter
 from typing import Tuple, Union, Callable, List
+import dataclasses
 
 import numpy as np
 from pytest import approx
@@ -58,30 +59,71 @@ def get_heuristic(game: botbowl.Game) -> HeuristicVector:
                            ball_marked=ball_marked)
 
 
+
+
+
+
 MCTS_Info = namedtuple('MCTS_Info', 'probabilities actions action_values visits heuristic reward state_value')
 Policy = Callable[[botbowl.Game], Tuple[float, np.ndarray, List[botbowl.Action]]]
 
 
-def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, exploration_coeff=1) -> None:
+@dataclasses.dataclass
+class ContinueCondition:
+    probability: float = 0.02
+    single_drive: bool = True
+    turns: int = 1  # Note: turn counter increases after kickoff is resolved!
+    opp_as_final_turn: bool = True
+
+
+def get_score_sum(g):
+    return g.state.home_team.state.score + g.state.away_team.state.score
+
+
+def get_team_turn_num(g: botbowl.Game, team: botbowl.Team) -> int:
+    return g.state.half * g.config.rounds + team.state.turn
+
+
+def continue_expansion(node: ActionNode, game, cc_cond, scores, half, end_turn_at, team) -> bool:
+    if game.state.game_over:
+        return False
+    if cc_cond.single_drive and (get_score_sum(game) != scores or game.state.half != half):
+        return False
+    if get_team_turn_num(game, team) >= end_turn_at:
+        return False
+
+    # This ends the search after {my_team} has played its final turn, if opp_as_final_turn
+    if (not cc_cond.opp_as_final_turn) and team.state.turn == end_turn_at - 1:
+        turn = game.current_turn
+        if turn is not None and turn.team is not team:
+            return False
+
+    if cc_cond.probability > 0 and node.get_accum_prob() < cc_cond.probability:
+        return False
+    return True
+
+
+def deterministic_tree_search_rollout(tree: SearchTree,
+                                      policy: Policy,
+                                      weights: HeuristicVector,
+                                      exploration_coeff=1,
+                                      cc_cond: ContinueCondition = None) -> None:
+    if cc_cond is None:
+        cc_cond = ContinueCondition()
+
     weights = np.array(weights)
     tree.set_game_to_node(tree.root_node)
     game = tree.game
 
-    scores = game.state.home_team.state.score + game.state.away_team.state.score
-    my_team = game.actor
-    my_turn_num = tree.root_node.turn
+    scores = get_score_sum(game)
+    half = game.state.half
+    my_team = game.active_team
 
-    def continue_expansion(a_node: ActionNode) -> bool:
-        tree.set_game_to_node(a_node)
-        if game.state.game_over:
-            return False         
-        if game.actor is my_team and my_turn_num != a_node.turn:
-            return False
-        if game.state.home_team.state.score + game.state.away_team.state.score != scores:
-            return False
-        if a_node.get_accum_prob() < 0.02:
-            return False
-        return True
+    turn_counter_adjust = 1 * (game.get_proc(botbowl.core.procedure.Kickoff) is not None or
+                               game.get_proc(botbowl.core.procedure.LandKick) is not None)
+    end_turn_at = get_team_turn_num(game, my_team) + turn_counter_adjust + cc_cond.turns
+
+    _continue_expension = partial(continue_expansion, game=game, cc_cond=cc_cond, scores=scores, half=half,
+                                  end_turn_at=end_turn_at, team=my_team)
 
     def setup_node(new_node: ActionNode):
         if type(new_node.info) is not MCTS_Info:
@@ -150,7 +192,8 @@ def do_mcts_branch(tree: SearchTree, policy: Policy, weights: HeuristicVector, e
 
         for child_node in node.get_children_from_action(action):
             setup_node(child_node)
-            if continue_expansion(child_node):
+            tree.set_game_to_node(child_node)
+            if _continue_expension(child_node):
                 node_queue.put(child_node)
             else:
                 back_propagate(child_node)

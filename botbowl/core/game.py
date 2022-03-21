@@ -13,6 +13,8 @@ from botbowl.core.forward_model import Trajectory, MovementStep, Step
 from copy import deepcopy
 from typing import Optional, Tuple, List, Union, Any
 
+from more_itertools import first
+
 
 class InvalidActionError(Exception):
     pass
@@ -116,6 +118,13 @@ class Game:
         """
         assert self.trajectory.enabled
         self.trajectory.step_forward(steps)
+
+    @property
+    def current_turn(self) -> Optional[Turn]:
+        for proc in reversed(self.state.stack.items):
+            if type(proc) is Turn:
+                return proc
+        return None
 
     @property
     def active_team(self) -> Optional[Team]:

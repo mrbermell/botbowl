@@ -81,7 +81,7 @@ def test_dodge_pickup_score():
 
     def search_select_step():
         for i in range(10):
-            ts.do_mcts_branch(tree, policy, weights, exploration_coeff=0.5)
+            ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=0.5)
         info: ts.MCTS_Info = tree.root_node.info
         print("   ")
         print_node(tree.root_node, weights)
@@ -134,7 +134,7 @@ def test_pickup_score():
 
     def search_select_step():
         for i in range(40):
-            ts.do_mcts_branch(tree, policy, weights, exploration_coeff=0.5)
+            ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=0.5)
         info: ts.MCTS_Info = tree.root_node.info
         print("   ")
         print_node(tree.root_node, weights)
@@ -287,7 +287,7 @@ def test_mcts():
     tree = ts.SearchTree(game)
     policy = ts.MockPolicy()
     for i in range(20):
-        ts.do_mcts_branch(tree, policy, weights, exploration_coeff=5)
+        ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=5)
 
     print("")
     mcts_info = tree.root_node.info

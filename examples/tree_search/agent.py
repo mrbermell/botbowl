@@ -40,7 +40,7 @@ class SearchAgent(botbowl.Agent):
 
         while True:
             for _ in range(5):
-                ts.do_mcts_branch(self.tree, self.policy, self.weights, exploration_coeff=0.5)
+                ts.deterministic_tree_search_rollout(self.tree, self.policy, self.weights, exploration_coeff=0.5)
 
             if self.tree.root_node.info.visits.sum() > 25 or game.get_seconds_left() < 5:
                 break

@@ -29,7 +29,7 @@ def main():
     game, *_ = get_custom_game_turn(player_positions=[(7, 2), (7, 4), (10, 3)],
                                     opp_player_positions=[(4, 2), (4, 4), (6, 3)],
                                     ball_position=(7, 2),
-                                    size=3,
+                                    size=5,
                                     rerolls=0,
                                     pathfinding_enabled=True)
 
@@ -42,7 +42,6 @@ def main():
 
     input("quit")
 
-
     vals = np.zeros(shape=(len(search_heuristics), times_evaluated, num_rollouts, 3))
 
     for i, search_heuristic in enumerate(search_heuristics):
@@ -53,7 +52,7 @@ def main():
         for k in range(num_rollouts):
             # explore
             for j, tree in enumerate(trees):
-                ts.do_mcts_branch(tree, policy, weights=search_heuristic, exploration_coeff=1)
+                ts.deterministic_tree_search_rollout(tree, policy, weights=search_heuristic, exploration_coeff=1)
                 # What is the expected value
                 expected_value = max(map(node_evaluation, tree.root_node.children))
                 num_nodes = len(tree.all_action_nodes)
