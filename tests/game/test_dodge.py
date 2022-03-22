@@ -66,7 +66,7 @@ def test_dodge_skill_reroll_single_use_limit():
     to = Square(11, 12)
     assert game.get_player_at(to) is None
     D6.fix(1)  # fail first dodge
-    D6.fix(4)  # pass on dodge skill
+    D6.fix(6)  # pass on dodge skill
     D6.fix(1)  # fail second dodge
     D6.fix(6)  # second dodge skill use will pass - if the code is wrong!
     game.step(Action(ActionType.MOVE, player=player, position=to))
