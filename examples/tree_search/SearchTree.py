@@ -21,8 +21,6 @@ from examples.tree_search.hashmap import HashMap, create_gamestate_hash
 
 accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
 
-remove_randomness = partial(only_fixed_rolls, assert_fixes_consumed=False, assert_no_prev_fixes=False)
-
 
 class Node(ABC):
     parent: Optional['Node']
