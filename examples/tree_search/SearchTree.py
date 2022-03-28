@@ -48,6 +48,11 @@ class Node(ABC):
         self_type = str(type(self)).split(".")[-1]
         return f"{self_type}({self.step_nbr=}, {self.top_proc}"
 
+    @staticmethod
+    def format_proc(proc) -> str:
+        index_first_parenthesis = str(proc).find('(')
+        return str(proc)[:index_first_parenthesis]
+
 
 class ActionNode(Node):
     team: botbowl.Team
@@ -122,7 +127,24 @@ class ActionNode(Node):
         return f"ActionNode({team}, {self.top_proc}, depth={self.depth}, acc_prob={self.get_accum_prob():.3f}, " \
                f"len(children)={len(self.children)})"
 
-    def to_xml(self):
+    @staticmethod
+    def format_action(action: botbowl.Action) -> str:
+        pos_str = "" if action.position is None else f" {action.position}"
+        return f"{action.action_type.name}{pos_str}"
+
+
+    def to_xml(self, parent: Union[ET.Element, ET.SubElement]):
+        team = "home" if self.is_home else "away"
+        tag_attributes = {'proc': Node.format_proc(self.top_proc),
+                          'team': team,
+                          'num_actions': str(len(self.explored_actions))}
+        this_tag = ET.SubElement(parent, 'action_node',
+                                 attrib=tag_attributes)
+        for action, child_node in zip(self.explored_actions, self.children):
+            action_tag = ET.SubElement(this_tag, 'action', attrib={'action': ActionNode.format_action(action)})
+            child_node.to_xml(action_tag)
+
+
 
 def get_action_node_children(node: Node) -> Iterable[ActionNode]:
     if isinstance(node, ActionNode):
@@ -155,6 +177,15 @@ class ChanceNode(Node):
     def get_child_prob(self, child_node: Node) -> float:
         assert child_node in self.children
         return self.child_probability[self.children.index(child_node)]
+
+    def to_xml(self, parent: Union[ET.Element, ET.SubElement]):
+        tag_attributes = {'proc': Node.format_proc(self.top_proc)}
+
+        this_tag = ET.SubElement(parent, 'chance_node', attrib=tag_attributes)
+        for prob, child_node in zip(self.child_probability, self.children):
+            child_node: Union[ChanceNode, ActionNode]
+            outcome_tag = ET.SubElement(this_tag, 'outcome', attrib={'p': f"{prob:.2f}"})
+            child_node.to_xml(outcome_tag)
 
 
 class SearchTree:
@@ -282,7 +313,8 @@ class SearchTree:
 
     def to_xml(self) -> ET.Element:
         root = ET.Element('search_tree')
-        ET.SubElement(root, self.root_node.to_xml())
+        self.root_node.to_xml(root)
+        ET.indent(root)
         return root
 
 def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode) -> Node:

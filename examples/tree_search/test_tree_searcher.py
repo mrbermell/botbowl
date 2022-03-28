@@ -10,6 +10,7 @@ from botbowl.core import procedure
 from examples.tree_search import hashmap
 from tests.util import get_custom_game_turn, only_fixed_rolls
 
+
 default_weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
 
 
@@ -414,3 +415,24 @@ def test_mock_policy():
     _, probs, actions = policy(game)
 
     print("")
+
+
+def test_xml_tree():
+    game, _ = get_custom_game_turn(player_positions=[(6, 6), (7, 7)],
+                                   opp_player_positions=[(5, 6)],
+                                   ball_position=(6, 6),
+                                   pathfinding_enabled=True)
+
+    weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
+
+    tree = ts.SearchTree(game)
+    policy = ts.MockPolicy()
+    ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=1)
+    ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=1)
+    ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=1)
+
+    root = tree.to_xml()
+
+    import xml.etree.ElementTree as ET
+    print("")
+    ET.dump(root)
