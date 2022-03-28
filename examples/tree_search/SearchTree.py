@@ -19,6 +19,8 @@ from botbowl import Skill, BBDieResult
 from tests.util import only_fixed_rolls
 from examples.tree_search.hashmap import HashMap, create_gamestate_hash
 
+import xml.etree.ElementTree as ET
+
 accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
 
 
@@ -120,6 +122,7 @@ class ActionNode(Node):
         return f"ActionNode({team}, {self.top_proc}, depth={self.depth}, acc_prob={self.get_accum_prob():.3f}, " \
                f"len(children)={len(self.children)})"
 
+    def to_xml(self):
 
 def get_action_node_children(node: Node) -> Iterable[ActionNode]:
     if isinstance(node, ActionNode):
@@ -277,6 +280,10 @@ class SearchTree:
             new_action_nodes.extend(self._look_for_action_nodes(child_node))
         return new_action_nodes
 
+    def to_xml(self) -> ET.Element:
+        root = ET.Element('search_tree')
+        ET.SubElement(root, self.root_node.to_xml())
+        return root
 
 def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode) -> Node:
     """
