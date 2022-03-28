@@ -7,18 +7,20 @@ import examples.tree_search as ts
 import matplotlib.pyplot as plt
 import numpy as np
 from examples.tree_search import MCTS_Info
+import examples.tree_search.evaluation_scenarios as scenarios
 from tests.util import get_custom_game_turn
 
-times_evaluated = 5
+times_evaluated = 3
 num_rollouts = 5000
 
 search_heuristics = [
-    # ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1),
+    #ts.HeuristicVector(score=1, ball_marked=0.05, ball_carried=0.2, ball_position=0.01, tv_on_pitch=0),
     ts.HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0, tv_on_pitch=0),
 ]
 
-evaluation_heuristic = ts.HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0, tv_on_pitch=0)
 
+evaluation_heuristic = ts.HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0, tv_on_pitch=0)
+#evaluation_heuristic = search_heuristics[0]
 
 def calculate_expected_value(node):
     return max(ts.get_node_value(child, evaluation_heuristic) for child in node.children)
@@ -30,17 +32,7 @@ def get_best_action_value(node):
 
 
 def main(tree_searcher):
-    game, *_ = get_custom_game_turn(player_positions=[(7, 2), (7, 4), (10, 3)],
-                                    opp_player_positions=[(4, 2), (4, 4), (6, 3)],
-                                    ball_position=(7, 2),
-                                    size=3,
-                                    rerolls=0,
-                                    pathfinding_enabled=True)
-
-    env_conf = botbowl.ai.env.EnvConf(size=3, pathfinding=True)
-    env = botbowl.ai.env.BotBowlEnv(env_conf)
-    env.reset(skip_observation=True)
-    env.game = game
+    game = scenarios.five_player_hopeless()
 
     vals = np.zeros(shape=(len(search_heuristics), times_evaluated, num_rollouts, 3))
 
