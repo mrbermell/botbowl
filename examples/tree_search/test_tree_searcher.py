@@ -397,3 +397,20 @@ def test_game_state_hash(name):
             assert new_hash not in hashes
             hashes.add(new_hash)
             latest_hashes.append(new_hash)
+
+
+def test_mock_policy():
+    game, _ = get_custom_game_turn(player_positions=[(6, 6), (1, 1)],
+                                   opp_player_positions=[(4, 4)],
+                                   ball_position=(3, 3),
+                                   pathfinding_enabled=True)
+
+    policy = ts.MockPolicy()
+
+    _, probs, actions = policy(game)
+
+    game.step(actions[1])
+
+    _, probs, actions = policy(game)
+
+    print("")

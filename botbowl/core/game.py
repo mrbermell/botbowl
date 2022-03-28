@@ -120,13 +120,6 @@ class Game:
         self.trajectory.step_forward(steps)
 
     @property
-    def current_turn(self) -> Optional[Turn]:
-        for proc in reversed(self.state.stack.items):
-            if type(proc) is Turn:
-                return proc
-        return None
-
-    @property
     def active_team(self) -> Optional[Team]:
         if len(self.state.available_actions) > 0:
             return self.state.available_actions[0].team
@@ -821,8 +814,7 @@ class Game:
         """
         :return: The top-most Turn procedure in the stack.
         """
-        for i in reversed(range(self.state.stack.size())):
-            proc = self.state.stack.items[i]
+        for proc in reversed(self.state.stack.items):
             if isinstance(proc, Turn):
                 return proc
         return None
