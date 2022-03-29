@@ -1,40 +1,52 @@
+import queue
 from typing import Optional, List, Tuple, Callable, Dict
 
 import numpy as np
 
+from more_itertools import first
+
 import botbowl
+import botbowl.core.procedure as procedure
 from botbowl import ActionType, Action, EnvConf, Setup, PlayerActionType
 from tests.util import get_game_turn
 
-use_directly_action_types = [ActionType.START_GAME,
-                             ActionType.TAILS,
-                             ActionType.RECEIVE,
-                             ]
+
+use_directly_action_types = frozenset({ActionType.START_GAME,
+                                       ActionType.TAILS,
+                                       ActionType.RECEIVE,
+                                       })
 
 
-def scripted_action(game: botbowl.Game) -> Optional[Action]:
-    available_action_types = {action_choice.action_type for action_choice in game.get_available_actions()}
+def scripted_action(game):
+    aa = game.get_available_actions()
+    aa_types = {ac.action_type for ac in aa}
 
-    for at in use_directly_action_types:
-        if at in available_action_types:
-            return Action(at)
-
-    if ActionType.PLACE_BALL in available_action_types:
-        x = game.arena.width // 4
-        if game.active_team is game.state.away_team:
-            x *= 3
-        y = game.arena.height // 2
-        return Action(ActionType.PLACE_BALL, position=botbowl.Square(x, y))
+    for action_type in aa_types & use_directly_action_types:
+        return Action(action_type)
 
     proc = game.get_procedure()
-    if type(proc) is Setup:
-        if game.is_setup_legal(game.active_team):
-            return Action(ActionType.END_SETUP)
-        for at in available_action_types:
-            if at not in {ActionType.END_SETUP, ActionType.PLACE_PLAYER}:
-                return Action(at)
 
-    return None
+    if isinstance(proc, procedure.Setup):
+        not_allowed = {ActionType.END_SETUP, ActionType.PLACE_PLAYER}
+        action_choice = first(filter(lambda ac: ac.action_type not in not_allowed, aa))
+        # todo: make sure end setup is called when available.
+        return Action(action_choice.action_type)
+
+    if isinstance(proc, procedure.PlaceBall):
+        height = len(game.square_shortcut)
+        width = len(game.square_shortcut[0])
+
+        x = width // 4 + 1
+        if game.active_team is game.state.away_team:
+            x *= 3
+        y = height // 2 + 1
+        return Action(ActionType.PLACE_BALL, position=botbowl.Square(x, y))
+
+    if isinstance(proc, procedure.Touchback):
+        return Action(ActionType.SELECT_PLAYER, player=aa[0].players[0])
+
+    if isinstance(proc, procedure.Interception):
+        return Action(ActionType.SELECT_PLAYER, player=aa[0].players[0])
 
 
 class MockPolicy:
@@ -49,8 +61,6 @@ class MockPolicy:
         self.convert_function: Dict[ActionType, Callable[[botbowl.Game], MockPolicy.ActionProbList]] = {
             ActionType.MOVE: self.move_actions,
             ActionType.START_HANDOFF: self.start_handoff_actions,
-            # ActionType.START_BLITZ: self.move_actions,
-            # ActionType.START_BLITZ: self.move_actions,
             # ActionType.START_BLITZ: self.move_actions,
         }
 
@@ -128,11 +138,11 @@ class MockPolicy:
         if action is not None:
             return 0.0, np.array([1.0]), [action]
 
-        actions: MockPolicy.ActionProbList = []
-
         if self.end_setup:
             self.end_setup = False
             return 0.0, np.array([1.0]), [Action(ActionType.END_SETUP)]
+
+        actions: MockPolicy.ActionProbList = []
 
         for action_choice in game.get_available_actions():
             action_type = action_choice.action_type
