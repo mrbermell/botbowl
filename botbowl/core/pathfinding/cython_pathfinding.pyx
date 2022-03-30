@@ -14,15 +14,12 @@ import botbowl.core.table as table
 import botbowl.core.model as model
 import botbowl.core.forward_model as forward_model
 from .python_pathfinding import _alter_state, _reset_state
-import copy
 
 from libcpp.map cimport map as mapcpp
 from libcpp.vector cimport vector
 from libcpp.queue cimport priority_queue
 from libcpp.memory cimport shared_ptr, make_shared
 
-import cython
-cimport cython
 from cython.operator import dereference
 
 from .pathing_node cimport Node, Square
@@ -30,7 +27,7 @@ ctypedef shared_ptr[Node] NodePtr
 
 
 cdef object to_botbowl_Square(Square sq):
-    return model.Square(sq.x, sq.y, )
+    return model.Square(sq.x, sq.y)
 
 cdef Square from_botbowl_Square(object sq):
     return Square(sq.x, sq.y)
@@ -111,16 +108,7 @@ cdef class Path:
 
     def __reduce__(self):
         # Need custom reduce() because built in reduce() can't handle the c++ objects
-        def recreate_self(steps, rolls, block_dice, foul_roll, handoff_roll, prob):
-            path = Path()
-            path._steps = steps
-            path._rolls = rolls
-            path.block_dice = block_dice
-            path.foul_roll = foul_roll
-            path.handoff_roll = handoff_roll
-            path.prob = prob
-            return path
-        return recreate_self, (self.steps, self.rolls, self.block_dice, self.foul_roll, self.handoff_roll, self.prob)
+        return recreate_path, (self.steps, self.rolls, self.block_dice, self.foul_roll, self.handoff_roll, self.prob)
 
     def __eq__(self, other):
         return  self.prob == other.prob and \
@@ -139,6 +127,18 @@ cdef class Path:
 
 # Make the forward model treat Path as an immutable type.
 forward_model.immutable_types.add(Path)
+
+
+def recreate_path(steps, rolls, block_dice, foul_roll, handoff_roll, prob):
+    path = Path()
+    path._steps = steps
+    path._rolls = rolls
+    path.block_dice = block_dice
+    path.foul_roll = foul_roll
+    path.handoff_roll = handoff_roll
+    path.prob = prob
+    return path
+
 
 cdef Path create_path(NodePtr node):
     cdef Path path = Path()
