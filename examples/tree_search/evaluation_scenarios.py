@@ -28,9 +28,9 @@ def five_player_away_threatens_score():
 
 
 def five_player_hopeless():
-    game, _ = get_custom_game_turn(player_positions=[(13, 2)],
-                                   opp_player_positions=[(11, 2), (10, 3), (11, 4), (10, 5), (12, 5)],
-                                   ball_position=(10, 3),
+    game, _ = get_custom_game_turn(player_positions=[(2, 2)],
+                                   opp_player_positions=[(13, 5)],
+                                   ball_position=(13, 5),
                                    rerolls=1,
                                    size=5,
                                    turn=7,

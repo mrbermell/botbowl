@@ -5,9 +5,10 @@ from more_itertools import first
 from pytest import approx
 
 import examples.tree_search as ts
+import examples.tree_search.evaluation_scenarios as scenarios
 from botbowl import Square, Action, ActionType, Skill, BBDieResult, botbowl
 from botbowl.core import procedure
-from examples.tree_search import hashmap
+from examples.tree_search import hashmap, get_node_value
 from tests.util import get_custom_game_turn, only_fixed_rolls
 
 
@@ -436,3 +437,22 @@ def test_xml_tree():
     import xml.etree.ElementTree as ET
     print("")
     ET.dump(root)
+
+
+@pytest.mark.parametrize("data", [(scenarios.five_player_hopeless, -1), ])
+def test_deterministic_scenario_outcomes(data):
+    scenario, approx_expected_value = data
+    game = scenario()
+    weights = ts.HeuristicVector(score=1, ball_marked=0, ball_carried=0, ball_position=0, tv_on_pitch=0)
+    tree = ts.SearchTree(game)
+    policy = ts.MockPolicy()
+
+    cc_cond = ts.ContinueCondition(probability=0.01)
+
+    for _ in range(1000):
+        ts.deterministic_tree_search_rollout(tree, policy, weights, cc_cond=cc_cond, exploration_coeff=1)
+
+    expected = np.mean([ts.get_node_value(child, weights) for child in tree.root_node.children])
+
+    print("")
+    print(f"{expected=}")

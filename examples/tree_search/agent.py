@@ -1,10 +1,8 @@
 import queue
 import numpy as np
 from typing import Optional
-from more_itertools import first
 
 import botbowl
-import botbowl.core.procedure as procedure
 from botbowl import ActionType, Action
 import examples.tree_search as ts
 
