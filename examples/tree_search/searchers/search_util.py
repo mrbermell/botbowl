@@ -1,17 +1,11 @@
 import botbowl
 from collections import namedtuple
-from examples.tree_search.SearchTree import ActionNode
+from examples.tree_search.SearchTree import ActionNode, HeuristicVector
 import dataclasses
 from typing import Callable, Tuple, List
 import numpy as np
 
-HeuristicVector = namedtuple('HeuristicVector', ['score',
-                                                 'tv_on_pitch',
-                                                 'ball_position',
-                                                 'ball_carried',
-                                                 'ball_marked'])
 
-MCTS_Info = namedtuple('MCTS_Info', 'probabilities actions action_values visits heuristic reward state_value')
 Policy = Callable[[botbowl.Game], Tuple[float, np.ndarray, List[botbowl.Action]]]
 
 

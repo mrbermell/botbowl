@@ -5,6 +5,7 @@ from typing import Union
 
 import botbowl
 import examples.tree_search.searchers.search_util as search_util
+import examples.tree_search as ts
 import numpy as np
 from examples.tree_search.SearchTree import SearchTree, ActionNode, ChanceNode, Node
 from pytest import approx
@@ -35,7 +36,7 @@ def deterministic_tree_search_rollout(tree: SearchTree,
                                  end_turn_at=end_turn_at, team=my_team)
 
     def setup_node(new_node: ActionNode):
-        if type(new_node.info) is not search_util.MCTS_Info:
+        if type(new_node.info) is not ts.MCTS_Info:
             tree.set_game_to_node(new_node)
             _, probabilities, actions_ = policy(tree.game)
             num_actions = len(actions_)
@@ -48,13 +49,13 @@ def deterministic_tree_search_rollout(tree: SearchTree,
                         reward = heuristic - parent.info.heuristic
                         break
 
-            new_node.info = search_util.MCTS_Info(probabilities=probabilities / probabilities.mean(),
-                                                  actions=actions_,
-                                                  action_values=np.zeros((num_actions, len(reward))),
-                                                  visits=np.zeros(num_actions, dtype=np.int),
-                                                  heuristic=heuristic,
-                                                  reward=reward,
-                                                  state_value=0)
+            new_node.info = ts.MCTS_Info(probabilities=probabilities / probabilities.mean(),
+                                         actions=actions_,
+                                         action_values=np.zeros((num_actions, len(reward))),
+                                         visits=np.zeros(num_actions, dtype=np.int),
+                                         heuristic=heuristic,
+                                         reward=reward,
+                                         state_value=0)
 
     def back_propagate(final_node: ActionNode):
         propagated_value = np.copy(final_node.info.reward)  # todo: add final_node.info.state_value too

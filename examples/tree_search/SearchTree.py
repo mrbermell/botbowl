@@ -1,10 +1,13 @@
+import dataclasses
 import itertools
 import operator
-from abc import ABC
-from collections import Counter
+import xml.etree.ElementTree as ET
+from abc import ABC, abstractmethod
+import collections
+
 from copy import deepcopy
-from functools import partial, reduce
-from typing import Optional, Callable, List, Union, Iterable, Any
+from functools import reduce
+from typing import Optional, Callable, List, Union, Iterable
 
 import more_itertools.more
 import numpy as np
@@ -12,16 +15,31 @@ from more_itertools import collapse, first
 from pytest import approx
 
 import botbowl
-import botbowl.core.procedure as procedures
 import botbowl.core.forward_model as forward_model
 import botbowl.core.pathfinding.python_pathfinding as pf
+import botbowl.core.procedure as procedures
 from botbowl import Skill, BBDieResult
-from tests.util import only_fixed_rolls
 from examples.tree_search.hashmap import HashMap, create_gamestate_hash
-
-import xml.etree.ElementTree as ET
+from tests.util import only_fixed_rolls
 
 accumulated_prob_2d_roll = np.array([36, 36, 36, 35, 33, 30, 26, 21, 15, 10, 6, 3, 1]) / 36
+
+HeuristicVector = collections.namedtuple('HeuristicVector', ['score',
+                                                             'tv_on_pitch',
+                                                             'ball_position',
+                                                             'ball_carried',
+                                                             'ball_marked'])
+
+
+@dataclasses.dataclass(kw_only=True)
+class MCTS_Info:
+    probabilities: np.ndarray
+    actions: List[botbowl.Action]
+    action_values: np.ndarray
+    visits: np.ndarray
+    heuristic: np.ndarray
+    reward: np.ndarray
+    state_value: float
 
 
 class Node(ABC):
@@ -53,13 +71,17 @@ class Node(ABC):
         index_first_parenthesis = str(proc).find('(')
         return str(proc)[:index_first_parenthesis]
 
+    @abstractmethod
+    def to_xml(self, parent, weights):
+        pass
+
 
 class ActionNode(Node):
     team: botbowl.Team
     explored_actions: List[botbowl.Action]
     is_home: bool
     turn: int
-    info: Any  # Only purpose is to store information for users of SearchTree
+    info: Optional[MCTS_Info]  # Only purpose is to store information for users of SearchTree
     simple_hash: str
 
     def __init__(self, game: botbowl.Game, parent: Optional[Node]):
@@ -105,7 +127,7 @@ class ActionNode(Node):
 
     def get_children_from_action(self, action: botbowl.Action) -> Iterable['ActionNode']:
         if action not in self.explored_actions:
-            return
+            return []
         child = self.children[self.explored_actions.index(action)]
         return get_action_node_children(child)
 
@@ -132,8 +154,7 @@ class ActionNode(Node):
         pos_str = "" if action.position is None else f" {action.position}"
         return f"{action.action_type.name}{pos_str}"
 
-
-    def to_xml(self, parent: Union[ET.Element, ET.SubElement]):
+    def to_xml(self, parent: Union[ET.Element, ET.SubElement], weights: HeuristicVector):
         team = "home" if self.is_home else "away"
         tag_attributes = {'proc': Node.format_proc(self.top_proc),
                           'team': team,
@@ -141,9 +162,15 @@ class ActionNode(Node):
         this_tag = ET.SubElement(parent, 'action_node',
                                  attrib=tag_attributes)
         for action, child_node in zip(self.explored_actions, self.children):
-            action_tag = ET.SubElement(this_tag, 'action', attrib={'action': ActionNode.format_action(action)})
-            child_node.to_xml(action_tag)
+            a_index = self.info.actions.index(action)
+            visits = self.info.visits[a_index]
+            action_values = np.dot(weights, self.info.action_values[a_index]) / visits
 
+            action_tag_attributes = {'action': ActionNode.format_action(action),
+                                     'visits': str(visits),
+                                     'action_values': f'{action_values:.3f}'}
+            action_tag = ET.SubElement(this_tag, 'action', attrib=action_tag_attributes)
+            child_node.to_xml(action_tag, weights)
 
 
 def get_action_node_children(node: Node) -> Iterable[ActionNode]:
@@ -178,14 +205,14 @@ class ChanceNode(Node):
         assert child_node in self.children
         return self.child_probability[self.children.index(child_node)]
 
-    def to_xml(self, parent: Union[ET.Element, ET.SubElement]):
+    def to_xml(self, parent: Union[ET.Element, ET.SubElement], weights: HeuristicVector):
         tag_attributes = {'proc': Node.format_proc(self.top_proc)}
 
         this_tag = ET.SubElement(parent, 'chance_node', attrib=tag_attributes)
         for prob, child_node in zip(self.child_probability, self.children):
             child_node: Union[ChanceNode, ActionNode]
             outcome_tag = ET.SubElement(this_tag, 'outcome', attrib={'p': f"{prob:.2f}"})
-            child_node.to_xml(outcome_tag)
+            child_node.to_xml(outcome_tag, weights)
 
 
 class SearchTree:
@@ -311,11 +338,12 @@ class SearchTree:
             new_action_nodes.extend(self._look_for_action_nodes(child_node))
         return new_action_nodes
 
-    def to_xml(self) -> ET.Element:
+    def to_xml(self, weights: HeuristicVector) -> ET.ElementTree:
         root = ET.Element('search_tree')
-        self.root_node.to_xml(root)
+        self.root_node.to_xml(root, weights)
         ET.indent(root)
-        return root
+        return ET.ElementTree(root)
+
 
 def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode) -> Node:
     """
@@ -337,7 +365,7 @@ def expand_action(game: botbowl.Game, action: botbowl.Action, parent: ActionNode
     return expand_none_action(game, parent)
 
 
-def get_expanding_function(proc, moving_handled, pickup_handled) -> Callable[[botbowl.Game, Node], Node]:
+def get_expanding_function(proc, moving_handled, pickup_handled) -> Optional[Callable[[botbowl.Game, Node], Node]]:
     proc_type = type(proc)
     if proc_type in {procedures.Dodge, procedures.GFI} and not moving_handled:
         return expand_moving
@@ -446,7 +474,7 @@ def expand_bounce(game: botbowl.Game, parent: Node) -> Node:
     for sq, num_tz in sq_to_num_tz.items():
         num_tz_to_sq.setdefault(num_tz, []).append(sq)
 
-    for num_tz, count in Counter(sq_to_num_tz.values()).items():
+    for num_tz, count in collections.Counter(sq_to_num_tz.values()).items():
         possible_squares = num_tz_to_sq[num_tz]
         square = np.random.choice(possible_squares, 1)[0]
 

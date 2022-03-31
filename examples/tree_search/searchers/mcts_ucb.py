@@ -1,12 +1,12 @@
-import queue
 from functools import partial
 from typing import List
 
-import botbowl
-import examples.tree_search.searchers.search_util as search_util
 import numpy as np
+
+import botbowl
+import examples.tree_search as ts
+import examples.tree_search.searchers.search_util as search_util
 from examples.tree_search.SearchTree import SearchTree, ActionNode, ChanceNode
-from pytest import approx
 
 
 def mcts_ucb_rollout(tree: SearchTree,
@@ -35,7 +35,7 @@ def mcts_ucb_rollout(tree: SearchTree,
                                  end_turn_at=end_turn_at, team=my_team)
 
     def setup_node(new_node: ActionNode):
-        if type(new_node.info) is not search_util.MCTS_Info:
+        if type(new_node.info) is not ts.MCTS_Info:
             tree.set_game_to_node(new_node)
             _, probabilities, actions_ = policy(tree.game)
             num_actions = len(actions_)
@@ -48,7 +48,7 @@ def mcts_ucb_rollout(tree: SearchTree,
                         reward = heuristic - parent.info.heuristic
                         break
 
-            new_node.info = search_util.MCTS_Info(probabilities=probabilities / probabilities.mean(),
+            new_node.info = ts.MCTS_Info(probabilities=probabilities / probabilities.mean(),
                                                   actions=actions_,
                                                   action_values=np.zeros((num_actions, len(reward))),
                                                   visits=np.zeros(num_actions, dtype=np.int),

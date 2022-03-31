@@ -72,7 +72,7 @@ class MockPolicy:
     def start_handoff_actions(self, game: botbowl.Game, action_choice) -> ActionProbList:
         ball = game.get_ball()
         if ball is not None and ball.position is not None:
-            if ball.is_carried and ball.position in action_choice.positions:
+            if ball.is_carried and ball.position in {player.position for player in action_choice.players}:
                 # only allow the ball carrier to do a handoff 
                 return [(Action(ActionType.START_HANDOFF, position=ball.position), 1)]
             elif ball.on_ground:

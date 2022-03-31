@@ -424,19 +424,18 @@ def test_xml_tree():
                                    ball_position=(6, 6),
                                    pathfinding_enabled=True)
 
-    weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
+    weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=0)
 
     tree = ts.SearchTree(game)
     policy = ts.MockPolicy()
-    ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=1)
-    ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=1)
-    ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=1)
 
-    root = tree.to_xml()
+    a, b, c = policy(game)
+    for _ in range(100):
+        ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=1)
 
-    import xml.etree.ElementTree as ET
-    print("")
-    ET.dump(root)
+    root = tree.to_xml(weights)
+
+    root.write('test_output.xml')
 
 
 @pytest.mark.parametrize("data", [(scenarios.five_player_hopeless, -1), ])
@@ -449,7 +448,7 @@ def test_deterministic_scenario_outcomes(data):
 
     cc_cond = ts.ContinueCondition(probability=0.01)
 
-    for _ in range(1000):
+    for _ in range(100):
         ts.deterministic_tree_search_rollout(tree, policy, weights, cc_cond=cc_cond, exploration_coeff=1)
 
     expected = np.mean([ts.get_node_value(child, weights) for child in tree.root_node.children])
