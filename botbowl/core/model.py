@@ -169,56 +169,12 @@ class Configuration:
         self.debug_mode = False
         self.competition_mode = False
         self.kick_scatter_distance = "d6"
+        self.throw_in_dice = "2d6"
         self.offensive_formations = []
         self.defensive_formations = []
         self.time_limits = None
         self.pathfinding_enabled = True
         self.pathfinding_directly_to_adjacent = True
-
-
-@immutable_after_init
-class Square:
-    x: int
-    y: int
-    _out_of_bounds: Optional[bool]
-
-    def __init__(self, x: int, y: int, _out_of_bounds=None):
-        self.x = x
-        self.y = y
-        self._out_of_bounds = _out_of_bounds
-
-    @property
-    def out_of_bounds(self):
-        assert self._out_of_bounds is not None  # This assertion can be removed when we trust the unit tests more
-        return self._out_of_bounds
-
-    def to_json(self):
-        return {
-            'x': self.x,
-            'y': self.y
-        }
-
-    def __eq__(self, other):
-        if other is None or self is None:
-            return False
-        return self.x == other.x and self.y == other.y
-
-    def __hash__(self):
-        return self.x * 7 + self.y * 13
-
-    def distance(self, other, manhattan=False, flight=False):
-        if manhattan:
-            return abs(other.x - self.x) + abs(other.y - self.y)
-        elif flight:
-            return sqrt((other.x - self.x) ** 2 + (other.y - self.y) ** 2)
-        else:
-            return max(abs(other.x - self.x), abs(other.y - self.y))
-
-    def is_adjacent(self, other, manhattan=False):
-        return self.distance(other, manhattan) == 1
-
-    def __repr__(self):
-        return f"Square({self.x}, {self.y})"
 
 
 class PlayerState(Reversible):
@@ -306,10 +262,12 @@ class PlayerState(Reversible):
         self.used_skills.clear()
         self.squares_moved.clear()
         self.failed_nega_trait_this_turn = False
+        self.has_blocked = False
 
     def reset_turn(self):
         self.moves = 0
         self.used = False
+        self.has_blocked = False
         self.used_skills.clear()
         self.failed_nega_trait_this_turn = False
         self.squares_moved.clear()
@@ -741,6 +699,18 @@ class Die(ABC):
     def to_json(self):
         pass
 
+    @staticmethod
+    def from_string(string: str, rng):
+        if string == "d3":
+            return D3(rng)
+        if string == "d6":
+            return D6(rng)
+        if string == "d8":
+            return D8(rng)
+        if string == "bb":
+            return BBDie(rng)
+        raise Exception(f"Unknown die {string}")
+
 
 @treat_as_immutable
 class DiceRoll:
@@ -753,6 +723,24 @@ class DiceRoll:
     target_lower: int
     highest_succeed: bool
     lowest_fail: bool
+
+    @staticmethod
+    def from_string(string: str, rng):
+        try:
+            if "d" in string:
+                before_d = string.split("d")[0]
+                if before_d == "":
+                    n = 1
+                else:
+                    n = int(before_d)
+                d = "d" + string.split("d")[1]
+            else:
+                n = 1
+                d = string
+            dice = [Die.from_string(d, rng) for _ in range(n)]
+            return DiceRoll(dice)
+        except Exception as e:
+            raise Exception("Not a valid dice format. Examples: d3, d6, d8, bb, 2d6")
 
     def __init__(self, dice, modifiers=0, target=None, d68=False, roll_type=RollType.AGILITY_ROLL, target_higher=True,
                  target_lower=False, highest_succeed=True, lowest_fail=True):
@@ -849,11 +837,11 @@ class D3(Die):
         else:
             raise ValueError("Fixed result of D3 must be between 1 and 3")
 
-    def __init__(self, rnd):
+    def __init__(self, rng):
         if len(D3.FixedRolls) > 0:
             self.value = D3.FixedRolls.pop(0)
         else:
-            self.value = rnd.randint(1, 4)
+            self.value = rng.randint(1, 4)
 
     def __repr__(self):
         return f"D3({self.value})"
@@ -892,11 +880,11 @@ class D6(Die, Immutable):
         else:
             raise ValueError("Fixed result of D6 must be between 1 and 6")
 
-    def __init__(self, rnd):
+    def __init__(self, rng):
         if len(D6.FixedRolls) > 0:
             self.value = D6.FixedRolls.pop(0)
         else:
-            self.value = rnd.randint(1, 7)
+            self.value = rng.randint(1, 7)
 
     def __repr__(self):
         return f"D6({self.value})"
@@ -939,11 +927,11 @@ class D8(Die, Immutable):
         else:
             raise ValueError("Fixed result of D8 must be between 1 and 8")
 
-    def __init__(self, rnd):
+    def __init__(self, rng):
         if len(D8.FixedRolls) > 0:
             self.value = D8.FixedRolls.pop(0)
         else:
-            self.value = rnd.randint(1, 9)
+            self.value = rng.randint(1, 9)
 
     def __repr__(self):
         return f"D8({self.value})"
@@ -973,13 +961,13 @@ class BBDie(Die, Immutable):
     def clear_fixes():
         BBDie.FixedRolls.clear()
 
-    def __init__(self, rnd):
+    def __init__(self, rng):
         if len(BBDie.FixedRolls) > 0:
             self.value = BBDie.FixedRolls.pop(0)
         else:
-            if rnd is None:
+            if rng is None:
                 raise ValueError()
-            r = rnd.randint(1, 7)
+            r = rng.randint(1, 7)
             if r == 6:
                 r = 3
             self.value = BBDieResult(r)
@@ -1250,6 +1238,51 @@ class Player(Piece, Reversible):
 
     def __repr__(self):
         return f"Player(position={self.position if self.position is not None else 'None'}, {self.role.name}, state={self.state})"
+
+
+@immutable_after_init
+class Square:
+    x: int
+    y: int
+    _out_of_bounds: Optional[bool]
+
+    def __init__(self, x: int, y: int, _out_of_bounds=None):
+        self.x = x
+        self.y = y
+        self._out_of_bounds = _out_of_bounds
+
+    @property
+    def out_of_bounds(self):
+        assert self._out_of_bounds is not None  # This assertion can be removed when we trust the unit tests more
+        return self._out_of_bounds
+
+    def to_json(self):
+        return {
+            'x': self.x,
+            'y': self.y
+        }
+
+    def __eq__(self, other):
+        if other is None or self is None:
+            return False
+        return self.x == other.x and self.y == other.y
+
+    def __hash__(self):
+        return self.x * 7 + self.y * 13
+
+    def distance(self, other, manhattan=False, flight=False):
+        if manhattan:
+            return abs(other.x - self.x) + abs(other.y - self.y)
+        elif flight:
+            return sqrt((other.x - self.x) ** 2 + (other.y - self.y) ** 2)
+        else:
+            return max(abs(other.x - self.x), abs(other.y - self.y))
+
+    def is_adjacent(self, other, manhattan=False):
+        return self.distance(other, manhattan) == 1
+
+    def __repr__(self):
+        return f"Square({self.x}, {self.y}, out={self._out_of_bounds if self._out_of_bounds is not None else 'None'})"
 
 
 class Race:
