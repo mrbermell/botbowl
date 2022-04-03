@@ -438,9 +438,16 @@ def expand_throw_in(game: botbowl.Game, parent: Node) -> Node:
     active_proc: procedures.ThrowIn = game.get_procedure()
     assert type(active_proc) is procedures.ThrowIn
 
-    d6_fixes = [3, 4] if game.arena.height > 7 else [1, 2]
+    d6_fixes = []
+    d3_fixes = [2]  # direction roll
+    if game.config.throw_in_dice == "2d6":
+        d6_fixes = [3, 4]
+    elif game.config.throw_in_dice == "d6":
+        d6_fixes = [4]
+    elif game.config.throw_in_dice == "d3":
+        d3_fixes.append = [1]  # distance roll is sampled after direction roll
 
-    with only_fixed_rolls(game, d3=[2], d6=d6_fixes):
+    with only_fixed_rolls(game, d3=d3_fixes, d6=d6_fixes):
         game.step()
 
     assert active_proc is not game.get_procedure()

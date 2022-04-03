@@ -191,10 +191,12 @@ def test_expand_block():
     assert len(tree.all_action_nodes) == 11
 
 
-def test_expand_throw_in():
-    game, (attacker, defender) = get_custom_game_turn(player_positions=[(5, 2)],
-                                                      opp_player_positions=[(5, 1)],
-                                                      ball_position=(5, 1),
+@pytest.mark.parametrize("pitch_size", [1, 3, 5, 7, 11])
+def test_expand_throw_in(pitch_size):
+    game, (attacker, defender) = get_custom_game_turn(player_positions=[(3, 2)],
+                                                      opp_player_positions=[(3, 1)],
+                                                      ball_position=(3, 1),
+                                                      size=pitch_size,
                                                       forward_model_enabled=True,
                                                       pathfinding_enabled=True)
 
@@ -203,7 +205,7 @@ def test_expand_throw_in():
         game.step(Action(ActionType.BLOCK, position=defender.position))
         game.step(Action(ActionType.SELECT_DEFENDER_DOWN))
 
-    action = Action(ActionType.PUSH, position=Square(5, 0))
+    action = Action(ActionType.PUSH, position=Square(3, 0))
 
     tree = ts.SearchTree(game)
     tree.expand_action_node(tree.root_node, action)
