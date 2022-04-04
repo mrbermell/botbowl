@@ -80,8 +80,10 @@ def get_custom_game_turn(*,
     game = get_game_turn(empty=True, home_team='human', away_team='human', size=size)
     assert game.active_team is game.state.home_team
 
-    home_players = (player for player in game.state.home_team.players if player.role.name == "Lineman")
-    away_players = (player for player in game.state.away_team.players if player.role.name == "Lineman")
+    home_players = [player for player in game.state.home_team.players if player.role.name == "Lineman"]
+    away_players = [player for player in game.state.away_team.players if player.role.name == "Lineman"]
+    assert len(away_players) >= len(opp_player_positions)
+    assert len(home_players) >= len(player_positions)
 
     game.state.weather = weather
 
