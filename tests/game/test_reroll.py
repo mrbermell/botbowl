@@ -173,5 +173,3 @@ def test_bonehead_loner_reroll_fail():
     assert game.has_report_of_type(OutcomeType.FAILED_LONER)
     assert game.has_report_of_type(OutcomeType.REROLL_USED)  # reroll was wasted
     assert not game.has_report_of_type(OutcomeType.SUCCESSFUL_BONE_HEAD)  # no bonehead success
-
-

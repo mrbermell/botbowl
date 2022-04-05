@@ -82,8 +82,8 @@ def get_custom_game_turn(*,
 
     home_players = [player for player in game.state.home_team.players if player.role.name == "Lineman"]
     away_players = [player for player in game.state.away_team.players if player.role.name == "Lineman"]
-    assert len(away_players) >= len(opp_player_positions)
-    assert len(home_players) >= len(player_positions)
+    assert opp_player_positions is None or len(away_players) >= len(opp_player_positions)
+    assert player_positions is None or len(home_players) >= len(player_positions)
 
     game.state.weather = weather
 
@@ -301,7 +301,3 @@ def only_fixed_rolls(game: botbowl.Game,
             assert len(botbowl.BBDie.FixedRolls) == 0, "Not all fixed BBDie rolls were consumed"
     finally:
         game.rng = rnd
-
-
-
-
