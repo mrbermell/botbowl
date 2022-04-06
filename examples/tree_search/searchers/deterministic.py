@@ -1,21 +1,23 @@
-import queue
 from functools import partial
 from operator import itemgetter
-from typing import Union
+from typing import Union, Callable, List, Iterable
 
 import botbowl
 import examples.tree_search.searchers.search_util as search_util
 import examples.tree_search as ts
 import numpy as np
-from examples.tree_search.SearchTree import SearchTree, ActionNode, ChanceNode, Node
+from examples.tree_search.SearchTree import SearchTree, ActionNode, ChanceNode, Node, get_action_node_children
 from pytest import approx
 
 
-def deterministic_tree_search_rollout(tree: SearchTree,
-                                      policy: search_util.Policy,
-                                      weights: search_util.HeuristicVector,
-                                      exploration_coeff=1,
-                                      cc_cond: search_util.ContinueCondition = None) -> None:
+def generic_tree_search_rollout(tree: SearchTree,
+                                policy: search_util.Policy,
+                                weights: search_util.HeuristicVector,
+                                expand_chance_node: Callable[[ts.ChanceNode], Iterable[ts.ActionNode]],
+                                sample_action: Callable[[ts.ActionNode, ts.HeuristicVector], botbowl.Action],
+                                cc_cond: search_util.ContinueCondition = None,
+                                back_propagate_with_probability: bool = False,
+                                ) -> None:
     if cc_cond is None:
         cc_cond = search_util.ContinueCondition()
 
@@ -62,7 +64,7 @@ def deterministic_tree_search_rollout(tree: SearchTree,
 
         n = final_node
         while True:
-            if isinstance(n.parent, ChanceNode):
+            if back_propagate_with_probability and isinstance(n.parent, ChanceNode):
                 propagated_value *= n.parent.get_child_prob(n)
             elif isinstance(n.parent, ActionNode):
                 action_object = n.parent.get_child_action(n)
@@ -76,37 +78,58 @@ def deterministic_tree_search_rollout(tree: SearchTree,
                 break
             n = n.parent
 
-    node_queue = queue.Queue()
-    node_queue.put(tree.root_node)
+    setup_node(tree.root_node)
+    node_queue: List[ts.ActionNode] = [tree.root_node]
 
-    while node_queue.qsize() > 0:
-        node: ActionNode = node_queue.get()
-        setup_node(node)
+    while len(node_queue) > 0:
+        node = node_queue.pop()
 
         # pick next action
-        mcts_info = node.info
-        weighted_action_vals = np.matmul(mcts_info.action_values, weights)
-        visits = mcts_info.visits + (mcts_info.visits == 0)  # last term prevents ZeroDivisionError
+        action = sample_action(node, weights)
 
-        if node.is_home:
-            a_index = np.argmax((weighted_action_vals + exploration_coeff * mcts_info.probabilities) / visits)
-        else:
-            a_index = np.argmin((weighted_action_vals - exploration_coeff * mcts_info.probabilities) / visits)
-
-        mcts_info.visits[a_index] += 1
-
-        # expand action and handle new nodes
-        action: botbowl.Action = mcts_info.actions[a_index]
+        # expand action
         if action not in node.explored_actions:
             tree.expand_action_node(node, action)
 
-        for child_node in node.get_children_from_action(action):
+        # handle child nodes
+        direct_child = node.children[node.explored_actions.index(action)]
+
+        if type(direct_child) is ts.ActionNode:
+            children = (direct_child,)
+        else:
+            children = expand_chance_node(direct_child)
+
+        for child_node in children:
             setup_node(child_node)
             tree.set_game_to_node(child_node)
             if continue_expension(child_node):
-                node_queue.put(child_node)
+                node_queue.append(child_node)
             else:
                 back_propagate(child_node)
+
+
+def determinstic_chance_node_expansion(node: ts.ChanceNode) -> Iterable[ts.ActionNode]:
+    return get_action_node_children(node)
+
+
+def uct_action_sample(node: ts.ActionNode, weights: ts.HeuristicVector) -> botbowl.Action:
+    mcts_info = node.info
+    weighted_action_vals = np.matmul(mcts_info.action_values, weights)
+    visits = mcts_info.visits + (mcts_info.visits == 0)  # last term prevents ZeroDivisionError
+
+    if node.is_home:
+        a_index = np.argmax((weighted_action_vals + mcts_info.probabilities) / visits)
+    else:
+        a_index = np.argmin((weighted_action_vals - mcts_info.probabilities) / visits)
+
+    mcts_info.visits[a_index] += 1
+    return mcts_info.actions[a_index]
+
+
+def single_stocastic_chance_node_exp(node: ts.ChanceNode) -> Iterable[ts.ActionNode]:
+    children: List[ActionNode] = list(get_action_node_children(node) )
+    prob = [child.get_accum_prob(end_node=node) for child in children]
+    return np.random.choice(children, 1, p=prob)[0],
 
 
 def get_node_value(node: Union[Node, ActionNode, ChanceNode], weights: search_util.HeuristicVector) -> float:
