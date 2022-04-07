@@ -85,7 +85,7 @@ def test_dodge_pickup_score():
 
     def search_select_step():
         for i in range(10):
-            ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=0.5)
+            ts.deterministic_tree_search_rollout(tree, policy, weights)
         info: ts.MCTS_Info = tree.root_node.info
         print("   ")
         print_node(tree.root_node, weights)
@@ -138,7 +138,7 @@ def test_pickup_score():
 
     def search_select_step():
         for i in range(40):
-            ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=0.5)
+            ts.deterministic_tree_search_rollout(tree, policy, weights)
         info: ts.MCTS_Info = tree.root_node.info
         print("   ")
         print_node(tree.root_node, weights)
@@ -295,10 +295,10 @@ def test_mcts(tree_searcher):
     tree = ts.SearchTree(game)
     policy = ts.MockPolicy()
     while len(tree.all_action_nodes) < 2000:
-        tree_searcher(tree, policy, weights, exploration_coeff=5)
+        tree_searcher(tree, policy, weights)
 
     print("")
-    print(f"{tree_searcher.__name__}, num explored nodes = {len(tree.all_action_nodes)}")
+    print(f"{tree_searcher}, num explored nodes = {len(tree.all_action_nodes)}")
     mcts_info = tree.root_node.info
     for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
         action.player = None
@@ -433,7 +433,7 @@ def test_xml_tree():
 
     a, b, c = policy(game)
     for _ in range(100):
-        ts.deterministic_tree_search_rollout(tree, policy, weights, exploration_coeff=1)
+        ts.deterministic_tree_search_rollout(tree, policy, weights)
 
     root = tree.to_xml(weights)
 
@@ -451,7 +451,7 @@ def test_deterministic_scenario_outcomes(data):
     cc_cond = ts.ContinueCondition(probability=0.01)
 
     for _ in range(100):
-        ts.deterministic_tree_search_rollout(tree, policy, weights, cc_cond=cc_cond, exploration_coeff=1)
+        ts.deterministic_tree_search_rollout(tree, policy, weights, cc_cond=cc_cond)
 
     expected = np.mean([ts.get_node_value(child, weights) for child in tree.root_node.children])
 

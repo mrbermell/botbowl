@@ -25,17 +25,13 @@ def generic_tree_search_rollout(tree: SearchTree,
     tree.set_game_to_node(tree.root_node)
     game = tree.game
 
-    scores = search_util.get_score_sum(game)
-    half = game.state.half
-    my_team = game.active_team
-
     turn_counter_adjust = 1 * (game.get_proc(botbowl.core.procedure.Kickoff) is not None or
                                game.get_proc(botbowl.core.procedure.LandKick) is not None)
-    end_turn_at = search_util.get_team_turn_num(game, my_team) + turn_counter_adjust + cc_cond.turns
+    end_turn_at = search_util.get_team_turn_num(game, game.active_team) + turn_counter_adjust + cc_cond.turns
 
     continue_expension = partial(search_util.continue_expansion,
-                                 game=game, cc_cond=cc_cond, scores=scores, half=half,
-                                 end_turn_at=end_turn_at, team=my_team)
+                                 game=game, cc_cond=cc_cond, scores=search_util.get_score_sum(game),
+                                 half=game.state.half, end_turn_at=end_turn_at, team=game.active_team)
 
     def setup_node(new_node: ActionNode):
         if type(new_node.info) is not ts.MCTS_Info:
@@ -71,8 +67,6 @@ def generic_tree_search_rollout(tree: SearchTree,
                 action_index = n.parent.info.actions.index(action_object)
                 n.parent.info.action_values[action_index] += propagated_value
                 propagated_value += n.parent.info.reward
-            else:
-                raise ValueError()
 
             if n.parent.parent is None:
                 break
@@ -84,14 +78,11 @@ def generic_tree_search_rollout(tree: SearchTree,
     while len(node_queue) > 0:
         node = node_queue.pop()
 
-        # pick next action
         action = sample_action(node, weights)
 
-        # expand action
         if action not in node.explored_actions:
             tree.expand_action_node(node, action)
 
-        # handle child nodes
         direct_child = node.children[node.explored_actions.index(action)]
 
         if type(direct_child) is ts.ActionNode:
@@ -101,7 +92,7 @@ def generic_tree_search_rollout(tree: SearchTree,
 
         for child_node in children:
             setup_node(child_node)
-            tree.set_game_to_node(child_node)
+            tree.set_game_to_node(child_node)  # continue_expension() requires this
             if continue_expension(child_node):
                 node_queue.append(child_node)
             else:
@@ -127,9 +118,22 @@ def uct_action_sample(node: ts.ActionNode, weights: ts.HeuristicVector) -> botbo
 
 
 def single_stocastic_chance_node_exp(node: ts.ChanceNode) -> Iterable[ts.ActionNode]:
-    children: List[ActionNode] = list(get_action_node_children(node) )
-    prob = [child.get_accum_prob(end_node=node) for child in children]
+    children: List[ActionNode] = list(get_action_node_children(node))
+    prob = [child.get_accum_prob(end_node=node.parent) for child in children]
     return np.random.choice(children, 1, p=prob)[0],
+
+
+deterministic_tree_search_rollout = partial(generic_tree_search_rollout,
+                                            sample_action=uct_action_sample,
+                                            expand_chance_node=determinstic_chance_node_expansion,
+                                            back_propagate_with_probability=True,
+                                            )
+
+mcts_ucb_rollout = partial(generic_tree_search_rollout,
+                           sample_action=uct_action_sample,
+                           expand_chance_node=single_stocastic_chance_node_exp,
+                           back_propagate_with_probability=False,
+                           )
 
 
 def get_node_value(node: Union[Node, ActionNode, ChanceNode], weights: search_util.HeuristicVector) -> float:

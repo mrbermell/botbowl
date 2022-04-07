@@ -31,7 +31,7 @@ HeuristicVector = collections.namedtuple('HeuristicVector', ['score',
                                                              'ball_marked'])
 
 
-@dataclasses.dataclass(kw_only=True)
+@dataclasses.dataclass
 class MCTS_Info:
     probabilities: np.ndarray
     actions: List[botbowl.Action]

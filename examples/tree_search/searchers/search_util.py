@@ -17,7 +17,7 @@ class ContinueCondition:
     opp_as_final_turn: bool = True
 
 
-def get_score_sum(g):
+def get_score_sum(g) -> int:
     return g.state.home_team.state.score + g.state.away_team.state.score
 
 
