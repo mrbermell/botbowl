@@ -1,45 +1,43 @@
+import random
+from functools import partial
 from typing import Callable, List, Tuple, Dict
+
+import numpy as np
 
 import botbowl
 import examples.tree_search as ts
-import examples.tree_search.searchers.search_util as search_util
 import examples.tree_search.hashmap as hashmap
-import numpy as np
-from functools import partial
+import examples.tree_search.searchers.search_util as search_util
 
 
 def setup_node(new_node: ts.ActionNode, game: botbowl.Game, policy):
     if new_node.info is None:
-        _, probabilities, actions_ = policy(game)
-        num_actions = len(actions_)
+        _, probabilities, actions = policy(game)
+        num_actions = len(actions)
         heuristic = np.array(search_util.get_heuristic(game))
-        reward = np.zeros(shape=heuristic.shape)
-
-        if new_node.parent is not None:
-            for parent in new_node.get_all_parents(include_self=False):
-                if isinstance(parent, ts.ActionNode):
-                    reward = heuristic - parent.info.heuristic
-                    break
 
         new_node.info = ts.MCTS_Info(probabilities=probabilities / probabilities.mean(),
-                                     actions=actions_,
-                                     action_values=np.zeros((num_actions, len(reward))),
+                                     actions=actions,
+                                     action_values=np.zeros((num_actions, len(heuristic))),
                                      visits=np.zeros(num_actions, dtype=np.int),
                                      heuristic=heuristic,
-                                     reward=reward,
+                                     reward=None,
                                      state_value=0)
 
 
-def vanilla_mcts(root_node: ts.ActionNode,
-                 game: botbowl.Game,
-                 nodes: Dict[str, ts.ActionNode],
-                 policy: search_util.Policy,
-                 weights: search_util.HeuristicVector,
-                 sample_action: Callable[[ts.ActionNode, ts.HeuristicVector], botbowl.Action],
-                 cc_cond: search_util.ContinueCondition = None,
-                 ) -> None:
+def mcts_with_game_engine(root_node: ts.ActionNode,
+                          game: botbowl.Game,
+                          nodes: Dict[str, ts.ActionNode],
+                          policy: search_util.Policy,
+                          weights: search_util.HeuristicVector,
+                          sample_action: Callable[[ts.ActionNode, ts.HeuristicVector], botbowl.Action],
+                          cc_cond: search_util.ContinueCondition = None,
+                          n: int = 1,
+                          ) -> None:
 
     assert hashmap.create_gamestate_hash(game) == root_node.simple_hash
+    assert game.trajectory.enabled
+
     if cc_cond is None:
         cc_cond = search_util.ContinueCondition()
 
@@ -55,29 +53,41 @@ def vanilla_mcts(root_node: ts.ActionNode,
 
     setup_node(root_node, game, policy)
 
-    node = root_node
-    back_prop_queue: List[Tuple[ts.ActionNode, botbowl.Action]] = []
+    for _ in range(n):
+        node = root_node
+        back_prop_queue: List[Tuple[ts.ActionNode, botbowl.Action]] = []
 
-    while continue_expension(node):
-        action = sample_action(node, weights)
-        back_prop_queue.append((node, action))
+        while continue_expension(node):
+            action = sample_action(node, weights)
+            back_prop_queue.append((node, action))
 
-        game.step(action)
+            game.step(action)
 
-        # figure out if the new state already existed.
-        node_hash = hashmap.create_gamestate_hash(game)
+            # figure out if the new state already exists.
+            node_hash = hashmap.create_gamestate_hash(game)
 
-        if node_hash in nodes:
-            node = nodes[node_hash]
-        else:
-            node = ts.ActionNode(game, parent=None)
-            setup_node(node, game, policy)
-            nodes[node_hash] = node
+            if node_hash in nodes:
+                node = nodes[node_hash]
+            else:
+                node = ts.ActionNode(game, parent=None)
+                setup_node(node, game, policy)
+                nodes[node_hash] = node
 
-    # do backpropagation
-    propagated_value = np.copy(node.info.reward)
-    while len(back_prop_queue) > 0:
-        node, action = back_prop_queue.pop()
-        action_index = node.info.actions.index(action)
-        node.info.action_values[action_index] += propagated_value
-        propagated_value += node.info.reward
+        # do backpropagation
+        final_heuristic = node.info.heuristic
+        while len(back_prop_queue) > 0:
+            node, action = back_prop_queue.pop()
+            action_index = node.info.actions.index(action)
+            node.info.action_values[action_index] += final_heuristic - node.info.heuristic
+
+        game.revert(root_node.step_nbr)
+
+
+def vanilla_action_sampling(node: ts.ActionNode, _) -> botbowl.Action:
+    index = random.randint(0, len(node.info.actions)-1)
+    node.info.visits[index] += 1
+    return node.info.actions[index]
+
+
+vanilla_mcts_rollout = partial(mcts_with_game_engine,
+                               sample_action=vanilla_action_sampling)

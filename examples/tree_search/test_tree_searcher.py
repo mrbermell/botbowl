@@ -307,6 +307,30 @@ def test_mcts(tree_searcher):
     print("")
 
 
+def test_vanilla_mcts():
+    game, _ = get_custom_game_turn(player_positions=[(6, 6), (7, 7)],
+                                   opp_player_positions=[(5, 6)],
+                                   ball_position=(6, 6),
+                                   pathfinding_enabled=True,
+                                   forward_model_enabled=True)
+
+    weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
+    policy = ts.MockPolicy()
+    all_action_nodes = dict()
+
+    root_node = ts.ActionNode(game, parent=None)
+
+    ts.vanilla_mcts_rollout(root_node, game, all_action_nodes, policy, weights, n=200)
+
+    print(f"num explored nodes = {len(all_action_nodes)}")
+    mcts_info = root_node.info
+    for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
+        action.player = None
+        action_value = np.dot(action_val, weights)/(visits + (visits == 0))
+        print(f"{action}, {visits=}, {action_value=:.4f}")
+    print("")
+
+
 @pytest.mark.parametrize("max_ma", [2, 1])
 def test_blitz_reroll(max_ma):
     if max_ma == 2:
@@ -457,3 +481,4 @@ def test_deterministic_scenario_outcomes(data):
 
     print("")
     print(f"{expected=}")
+
