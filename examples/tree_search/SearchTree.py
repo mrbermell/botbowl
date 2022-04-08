@@ -341,7 +341,9 @@ class SearchTree:
     def to_xml(self, weights: HeuristicVector) -> ET.ElementTree:
         root = ET.Element('search_tree')
         self.root_node.to_xml(root, weights)
-        ET.indent(root)
+
+        if hasattr(ET, 'indent'):
+            ET.indent(root)
         return ET.ElementTree(root)
 
 
