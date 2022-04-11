@@ -38,7 +38,6 @@ def mcts_with_game_engine(root_node: ts.ActionNode,
     assert hashmap.create_gamestate_hash(game) == root_node.simple_hash
     assert game.trajectory.enabled
     step_num = game.get_step()
-    assert step_num == root_node.step_nbr
 
     if cc_cond is None:
         cc_cond = search_util.ContinueCondition()

@@ -89,6 +89,7 @@ class VanillaMCTSSearchAgent(botbowl.Agent):
 
         scripted_action = SearchAgent.get_scripted_action(game, self.policy)
         if scripted_action is not None:
+            print(f"scripted action: {scripted_action}")
             return scripted_action
 
         node_hash = hashmap.create_gamestate_hash(game)
@@ -99,10 +100,8 @@ class VanillaMCTSSearchAgent(botbowl.Agent):
             self.root_node = ts.ActionNode(game, parent=None)
 
         start_time = time.perf_counter()
-        assert len(game.get_available_actions()) > 0
         my_game = copy.deepcopy(game)
         my_game.enable_forward_model()
-        assert len(my_game.get_available_actions()) > 0
         while True:
             self.tree_search_rollout(self.root_node, my_game, self.all_action_nodes)
 
@@ -123,14 +122,14 @@ def create_baseline_mcts_agent(weights) -> botbowl.Agent:
                       )
     return VanillaMCTSSearchAgent(name='baseline mcts agent',
                                   tree_search_rollout=rollout,
-                                  seconds_per_action=2,
+                                  seconds_per_action=15,
                                   policy=policy,
                                   final_action_choice_strategy=partial(search_util.highest_valued_action,
                                                                        weights=weights))
 
 
 def main():
-    weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
+    weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=0.3)
     agent = create_baseline_mcts_agent(weights)
 
     env_conf = botbowl.ai.env.EnvConf(size=3, pathfinding=True)

@@ -53,6 +53,7 @@ def scripted_action(game):
 
 class MockPolicy:
     ActionProbList = List[Tuple[Action, float]]
+    ConvertFuncType = Dict[ActionType, Callable[[botbowl.Game, botbowl.ActionChoice], ActionProbList]]
 
     def __init__(self):
         self.env_conf = EnvConf()
@@ -60,7 +61,7 @@ class MockPolicy:
         self.simple_types = set(self.env_conf.simple_action_types)
         self.simple_types.remove(ActionType.END_PLAYER_TURN)
 
-        self.convert_function: Dict[ActionType, Callable[[botbowl.Game], MockPolicy.ActionProbList]] = {
+        self.convert_function: MockPolicy.ConvertFuncType = {
             ActionType.MOVE: self.move_actions,
             ActionType.START_HANDOFF: self.start_handoff_actions,
             # ActionType.START_BLITZ: self.move_actions,
@@ -110,7 +111,7 @@ class MockPolicy:
                            (not is_ball_carrier) and \
                            ball_on_floor_pos in action_choice.positions
         if must_pickup_ball:
-            return [(Action(ActionType.MOVE), 1)]
+            return [(Action(ActionType.MOVE, position=ball_on_floor_pos), 1)]
 
         is_home = player.team is game.state.home_team
 
@@ -134,7 +135,7 @@ class MockPolicy:
 
     def __call__(self, game: botbowl.Game) -> PolicyReturn:
         if game.state.game_over:
-            return 0.0, np.array([1.0]), [None]
+            return 0.0, np.array([1.0]), [Action(ActionType.CONTINUE)]
 
         action = scripted_action(game)
         if action is not None:
