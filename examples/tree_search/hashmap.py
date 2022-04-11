@@ -62,7 +62,7 @@ def create_gamestate_hash(game: botbowl.Game) -> str:
     """
     Based the GameState, provides a str that can be used for fast and approximate game state comparisons
     """
-    assert len(game.state.available_actions) > 0 or game.state.game_over
+    assert len(game.state.available_actions) > 0 or game.state.game_over, f"len(aa)=0 when game is not over!"
 
     s = ""
     s += "h" if game.active_team is game.state.home_team else "a"

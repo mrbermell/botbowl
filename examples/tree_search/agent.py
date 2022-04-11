@@ -1,55 +1,29 @@
-import queue
-import numpy as np
-from typing import Optional
+import copy
+import time
+from functools import partial
+from typing import Callable, Dict
 
 import botbowl
-from botbowl import ActionType, Action
 import examples.tree_search as ts
+from botbowl import ActionType, Action
+from examples.tree_search import hashmap
+from examples.tree_search.searchers import search_util
+from examples.tree_search.searchers.mcts import vanilla_mcts_rollout
 
 
 class SearchAgent(botbowl.Agent):
-    tree: Optional[ts.SearchTree]
-    team: Optional[botbowl.Team]
-    queued_actions: queue.Queue
-
-    def __init__(self, name):
+    def __init__(self, name,
+                 tree_search_rollout: Callable[[ts.SearchTree], None],
+                 final_action_choice_strategy: Callable[[ts.ActionNode], botbowl.Action],
+                 seconds_per_action: int,
+                 policy: ts.Policy = None,
+                 ):
         super().__init__(name)
         self.tree = None
-        self.queued_actions = queue.Queue()
-        self.policy = ts.MockPolicy()
-        self.weights = ts.HeuristicVector(score=1, ball_marked=0.01, ball_carried=0.1, ball_position=0.001, tv_on_pitch=0)
-
-    def act(self, game: botbowl.Game) -> Action:
-
-        scripted_action = self.get_scripted_action(game)
-        if scripted_action is not None:
-            return scripted_action
-
-        self.tree.set_new_root(game)
-        while True:
-            ts.deterministic_tree_search_rollout(self.tree, self.policy, self.weights, exploration_coeff=0.5)
-            if self.tree.root_node.info.visits.sum() > 25 or game.get_seconds_left() < 5:
-                break
-
-        # expectimax
-        child_values = [ts.get_node_value(child_node, self.weights) for child_node in self.tree.root_node.children]
-        action = self.tree.root_node.explored_actions[np.argmax(child_values)]
-
-        print(f"num_visits={self.tree.root_node.info.visits.sum()} action: {action}")
-        return action
-
-    def get_scripted_action(self, game):
-        scripted_action = ts.Samplers.scripted_action(game)
-        if scripted_action is None:
-            _, _, actions = self.policy(game)
-            if len(actions) == 1:
-                scripted_action = actions[0]
-
-        if scripted_action is not None:
-            print(f"scripted action: {scripted_action}")
-            return scripted_action
-
-        return None
+        self.policy = policy
+        self.tree_search_rollout = tree_search_rollout
+        self.final_action_choice_strategy = final_action_choice_strategy
+        self.seconds_per_action = seconds_per_action
 
     def new_game(self, game, team):
         self.tree = ts.SearchTree(game)
@@ -57,14 +31,114 @@ class SearchAgent(botbowl.Agent):
     def end_game(self, game):
         pass
 
+    def act(self, game: botbowl.Game) -> Action:
+
+        scripted_action = SearchAgent.get_scripted_action(game, self.policy)
+        if scripted_action is not None:
+            return scripted_action
+
+        self.tree.set_new_root(game)
+        start_time = time.perf_counter()
+        while True:
+            self.tree_search_rollout(self.tree)
+
+            if time.perf_counter() - start_time > self.seconds_per_action:
+                break
+
+        action = self.final_action_choice_strategy(self.tree.root_node)
+
+        return action
+
+    @staticmethod
+    def get_scripted_action(game, policy):
+        scripted_action = ts.Samplers.scripted_action(game)
+        if scripted_action is None and policy is not None:
+            _, _, actions = policy(game)
+            if len(actions) == 1:
+                scripted_action = actions[0]
+
+        if scripted_action is not None:
+            return scripted_action
+
+        return None
+
+
+class VanillaMCTSSearchAgent(botbowl.Agent):
+    def __init__(self, name,
+                 tree_search_rollout: Callable[[ts.ActionNode, botbowl.Game, Dict[str, ts.ActionNode]], None],
+                 final_action_choice_strategy: Callable[[ts.ActionNode], botbowl.Action],
+                 seconds_per_action: int,
+                 policy: ts.Policy = None,
+                 ):
+        super().__init__(name)
+        self.all_action_nodes = dict()
+        self.root_node = None
+        self.policy = policy
+        self.final_action_choice_strategy = final_action_choice_strategy
+        self.tree_search_rollout = tree_search_rollout
+        self.seconds_per_action = seconds_per_action
+
+    def new_game(self, game, team):
+        self.all_action_nodes = dict()
+        self.root_node = None
+
+    def end_game(self, game):
+        pass
+
+    def act(self, game: botbowl.Game) -> Action:
+
+        scripted_action = SearchAgent.get_scripted_action(game, self.policy)
+        if scripted_action is not None:
+            return scripted_action
+
+        node_hash = hashmap.create_gamestate_hash(game)
+        if node_hash in self.all_action_nodes:
+            self.root_node = self.all_action_nodes[node_hash]
+        else:
+            self.all_action_nodes = {node_hash: self.root_node}
+            self.root_node = ts.ActionNode(game, parent=None)
+
+        start_time = time.perf_counter()
+        assert len(game.get_available_actions()) > 0
+        my_game = copy.deepcopy(game)
+        my_game.enable_forward_model()
+        assert len(my_game.get_available_actions()) > 0
+        while True:
+            self.tree_search_rollout(self.root_node, my_game, self.all_action_nodes)
+
+            if time.perf_counter() - start_time > self.seconds_per_action:
+                break
+
+        action = self.final_action_choice_strategy(self.root_node)
+        print(f"searched action: {action}")
+        return action
+
+
+def create_baseline_mcts_agent(weights) -> botbowl.Agent:
+    policy = ts.MockPolicy()
+
+    rollout = partial(vanilla_mcts_rollout,
+                      policy=policy,
+                      weights=weights,
+                      )
+    return VanillaMCTSSearchAgent(name='baseline mcts agent',
+                                  tree_search_rollout=rollout,
+                                  seconds_per_action=2,
+                                  policy=policy,
+                                  final_action_choice_strategy=partial(search_util.highest_valued_action,
+                                                                       weights=weights))
+
 
 def main():
+    weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
+    agent = create_baseline_mcts_agent(weights)
+
     env_conf = botbowl.ai.env.EnvConf(size=3, pathfinding=True)
     env = botbowl.ai.env.BotBowlEnv(env_conf)
     env.reset(skip_observation=True)
 
     game = env.game
-    agent = SearchAgent("searcher agent")
+
     agent.new_game(game, game.state.home_team)
     game.step(Action(ActionType.START_GAME))
     renderer = botbowl.ai.env_render.EnvRenderer(env)

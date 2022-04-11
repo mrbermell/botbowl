@@ -39,6 +39,18 @@ def seven_player_short_kick():
     return game
 
 
+def seven_player_home_threatens_turnover():
+    game, _ = get_custom_game_turn(player_positions=[(10, 2), (10, 3), (11, 4), (10, 5), (10, 7), (8, 7), (7, 7)],
+                                   opp_player_positions=[(5, 3), (7, 2), (9, 3), (7, 5), (9, 5), (5, 7)],
+                                   ball_position=(5, 3),
+                                   rerolls=2,
+                                   size=7,
+                                   turn=3,
+                                   pathfinding_enabled=True)
+
+    return game
+
+
 def seven_player_break_screen():
     game, _ = get_custom_game_turn(player_positions=[(6, 5), (7, 7), (8, 5), (7, 8), (9, 5), (13, 5), (17, 5)],
                                    opp_player_positions=[(5, 2), (4, 2), (5, 5), (4, 5), (5, 8), (4, 8), (4, 6)],
@@ -85,4 +97,6 @@ def draw_game(game):
 
 
 if __name__ == "__main__":
-    draw_game(five_player_hopeless())
+    draw_game(seven_player_home_threatens_turnover())
+
+    print("")

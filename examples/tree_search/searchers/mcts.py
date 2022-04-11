@@ -28,8 +28,8 @@ def setup_node(new_node: ts.ActionNode, game: botbowl.Game, policy):
 def mcts_with_game_engine(root_node: ts.ActionNode,
                           game: botbowl.Game,
                           nodes: Dict[str, ts.ActionNode],
-                          policy: search_util.Policy,
-                          weights: search_util.HeuristicVector,
+                          policy: ts.Policy,
+                          weights: ts.HeuristicVector,
                           sample_action: Callable[[ts.ActionNode, ts.HeuristicVector], botbowl.Action],
                           cc_cond: search_util.ContinueCondition = None,
                           n: int = 1,
@@ -37,6 +37,8 @@ def mcts_with_game_engine(root_node: ts.ActionNode,
 
     assert hashmap.create_gamestate_hash(game) == root_node.simple_hash
     assert game.trajectory.enabled
+    step_num = game.get_step()
+    assert step_num == root_node.step_nbr
 
     if cc_cond is None:
         cc_cond = search_util.ContinueCondition()
@@ -80,7 +82,7 @@ def mcts_with_game_engine(root_node: ts.ActionNode,
             action_index = node.info.actions.index(action)
             node.info.action_values[action_index] += final_heuristic - node.info.heuristic
 
-        game.revert(root_node.step_nbr)
+        game.revert(step_num)
 
 
 def vanilla_action_sampling(node: ts.ActionNode, _) -> botbowl.Action:

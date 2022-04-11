@@ -12,7 +12,7 @@ from pytest import approx
 
 def generic_tree_search_rollout(tree: SearchTree,
                                 policy: search_util.Policy,
-                                weights: search_util.HeuristicVector,
+                                weights: ts.HeuristicVector,
                                 expand_chance_node: Callable[[ts.ChanceNode], Iterable[ts.ActionNode]],
                                 sample_action: Callable[[ts.ActionNode, ts.HeuristicVector], botbowl.Action],
                                 cc_cond: search_util.ContinueCondition = None,
@@ -136,7 +136,7 @@ mcts_ucb_rollout = partial(generic_tree_search_rollout,
                            )
 
 
-def get_node_value(node: Union[Node, ActionNode, ChanceNode], weights: search_util.HeuristicVector) -> float:
+def get_node_value(node: Union[Node, ActionNode, ChanceNode], weights: ts.HeuristicVector) -> float:
     recursive_self = partial(get_node_value, weights=weights)
 
     if isinstance(node, ActionNode):
@@ -154,7 +154,7 @@ def get_node_value(node: Union[Node, ActionNode, ChanceNode], weights: search_ut
         raise ValueError()
 
 
-def get_best_action(root_node: ActionNode, weights: search_util.HeuristicVector) -> botbowl.Action:
+def get_best_action(root_node: ActionNode, weights: ts.HeuristicVector) -> botbowl.Action:
     assert len(root_node.children) == len(root_node.explored_actions)
 
     child_node_values = (get_node_value(node, weights) for node in root_node.children)
@@ -167,7 +167,7 @@ def get_best_action(root_node: ActionNode, weights: search_util.HeuristicVector)
     return root_node.explored_actions[action_index]
 
 
-def show_best_path(tree: SearchTree, weights: search_util.HeuristicVector):
+def show_best_path(tree: SearchTree, weights: ts.HeuristicVector):
     node = tree.root_node
     tree.set_game_to_node(node)
     report_index = len(tree.game.state.reports)

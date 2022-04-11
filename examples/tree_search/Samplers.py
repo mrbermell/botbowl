@@ -1,8 +1,6 @@
-import queue
-from typing import Optional, List, Tuple, Callable, Dict
+from typing import List, Tuple, Callable, Dict
 
 import numpy as np
-
 from more_itertools import first
 
 import botbowl
@@ -10,6 +8,8 @@ import botbowl.core.procedure as procedure
 from botbowl import ActionType, Action, EnvConf, Setup, PlayerActionType
 from tests.util import get_game_turn
 
+PolicyReturn = Tuple[float, np.ndarray, List[botbowl.Action]]
+Policy = Callable[[botbowl.Game], PolicyReturn]
 
 use_directly_action_types = frozenset({ActionType.START_GAME,
                                        ActionType.TAILS,
@@ -27,9 +27,11 @@ def scripted_action(game):
     proc = game.get_procedure()
 
     if isinstance(proc, procedure.Setup):
+        if game.is_setup_legal(proc.team):
+            return Action(ActionType.END_SETUP)
+
         not_allowed = {ActionType.END_SETUP, ActionType.PLACE_PLAYER}
         action_choice = first(filter(lambda ac: ac.action_type not in not_allowed, aa))
-        # todo: make sure end setup is called when available.
         return Action(action_choice.action_type)
 
     if isinstance(proc, procedure.PlaceBall):
@@ -130,7 +132,7 @@ class MockPolicy:
 
         return action_probs
 
-    def __call__(self, game: botbowl.Game) -> Tuple[float, np.ndarray, List[botbowl.Action]]:
+    def __call__(self, game: botbowl.Game) -> PolicyReturn:
         if game.state.game_over:
             return 0.0, np.array([1.0]), [None]
 

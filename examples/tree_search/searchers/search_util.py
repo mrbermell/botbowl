@@ -1,9 +1,40 @@
-import botbowl
-from collections import namedtuple
-from examples.tree_search.SearchTree import ActionNode, HeuristicVector
 import dataclasses
 from typing import Callable, Tuple, List
+
 import numpy as np
+
+import botbowl
+import examples.tree_search as ts
+
+
+def most_visited_action(node: ts.ActionNode) -> botbowl.Action:
+    index = np.argmax(node.info.visits)
+    return node.info.actions[index]
+
+
+def highest_valued_action(node: ts.ActionNode, weights: ts.HeuristicVector) -> botbowl.Action:
+    visits = node.info.visits
+    not_visited = visits == 0
+
+    avg_action_values = np.matmul(node.info.action_values, weights) / (visits + not_visited)
+
+    if node.is_home:
+        avg_action_values[not_visited] -= 9999
+        index = np.argmax(avg_action_values)
+    else:
+        avg_action_values[not_visited] += 9999
+        index = np.argmin(avg_action_values)
+
+    return node.info.actions[index]
+
+
+def highest_expectimax_action(node: ts.ActionNode, weights: ts.HeuristicVector) -> botbowl.Action:
+    child_node_values = [ts.get_node_value(child_node, weights) for child_node in node.children]
+    if node.is_home:
+        index = np.argmax(child_node_values)
+    else:
+        index = np.argmin(child_node_values)
+    return node.explored_actions[np.argmax(index)]
 
 
 Policy = Callable[[botbowl.Game], Tuple[float, np.ndarray, List[botbowl.Action]]]
@@ -25,7 +56,7 @@ def get_team_turn_num(g: botbowl.Game, team: botbowl.Team) -> int:
     return g.state.half * g.config.rounds + team.state.turn
 
 
-def continue_expansion(node: ActionNode, game, cc_cond, scores, half, end_turn_at, team) -> bool:
+def continue_expansion(node: ts.ActionNode, game, cc_cond, scores, half, end_turn_at, team) -> bool:
     if game.state.game_over:
         return False
     if cc_cond.single_drive and (get_score_sum(game) != scores or game.state.half != half):
@@ -44,7 +75,7 @@ def continue_expansion(node: ActionNode, game, cc_cond, scores, half, end_turn_a
     return True
 
 
-def get_heuristic(game: botbowl.Game) -> HeuristicVector:
+def get_heuristic(game: botbowl.Game) -> ts.HeuristicVector:
     """
     Heuristic based on game state, calculated from home teams perspective
     zero-sum, meaning away team's heuristic is negative of home team's heuristic
@@ -78,8 +109,8 @@ def get_heuristic(game: botbowl.Game) -> HeuristicVector:
         else:
             ball_marked += (home_marking_ball - away_marking_ball)
 
-    return HeuristicVector(score=score,
-                           tv_on_pitch=tv_on_pitch,
-                           ball_position=ball_position,
-                           ball_carried=ball_carried,
-                           ball_marked=ball_marked)
+    return ts.HeuristicVector(score=score,
+                              tv_on_pitch=tv_on_pitch,
+                              ball_position=ball_position,
+                              ball_carried=ball_carried,
+                              ball_marked=ball_marked)
