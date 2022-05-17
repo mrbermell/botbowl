@@ -51,7 +51,19 @@ def get_game_turn(seed=0, empty=False, home_team: str = 'human', away_team: str 
     return game
 
 
-Position = Union[Square, Tuple[int, int]]
+Position = Union[Square, Tuple[int, int], Tuple[int, int, str]]
+
+
+def pop_role(list_of_players: List[Player], pos: Position) -> Player:
+    role_str = 'Lineman' if isinstance(pos, Square) or len(pos) == 2 else pos[2]
+    index = None
+    for i, player in enumerate(list_of_players):
+        if player.role.name == role_str:
+            index = i
+            break
+    player = list_of_players.pop(index)
+    assert player.position is None
+    return player
 
 
 def get_custom_game_turn(*,
@@ -80,8 +92,8 @@ def get_custom_game_turn(*,
     game = get_game_turn(empty=True, home_team='human', away_team='human', size=size)
     assert game.active_team is game.state.home_team
 
-    home_players = [player for player in game.state.home_team.players if player.role.name == "Lineman"]
-    away_players = [player for player in game.state.away_team.players if player.role.name == "Lineman"]
+    home_players = game.state.home_team.players[:]
+    away_players = game.state.away_team.players[:]
     assert opp_player_positions is None or len(away_players) >= len(opp_player_positions)
     assert player_positions is None or len(home_players) >= len(player_positions)
 
@@ -98,15 +110,15 @@ def get_custom_game_turn(*,
 
     added_players = []
 
-    for player, sq in zip(home_players, player_positions):
-        assert player.team is game.state.home_team and player.position is None
-        game.put(player, assert_square_type(sq))
+    for pos in player_positions:
+        player = pop_role(home_players, pos)
+        game.put(player, assert_square_type(pos))
         added_players.append(player)
 
     if opp_player_positions is not None:
-        for player, sq in zip(away_players, opp_player_positions):
-            assert player.team is game.state.away_team and player.position is None
-            game.put(player, assert_square_type(sq))
+        for pos in opp_player_positions:
+            player = pop_role(away_players, pos)
+            game.put(player, assert_square_type(pos))
             added_players.append(player)
 
     if ball_position is not None:
