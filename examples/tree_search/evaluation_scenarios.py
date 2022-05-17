@@ -79,11 +79,25 @@ def five_player_hopeless():
     game, _ = get_custom_game_turn(player_positions=[(2, 2)],
                                    opp_player_positions=[(13, 5)],
                                    ball_position=(13, 5),
-                                   rerolls=1,
-                                   size=5,
-                                   turn=7,
+                                   rerolls=3,
+                                   size=11,
+                                   turn=1,
                                    pathfinding_enabled=True)
 
+    return game
+
+
+def eleven_after_kickoff():
+    game, _ = get_custom_game_turn(player_positions=[(15, 3), (14, 7), (14, 8), (14, 9), (15, 12), (15, 13),
+                                                     (15, 4, 'Catcher'), (16, 8, 'Catcher'),
+                                                     (14, 6, 'Blitzer'), (14, 10, 'Blitzer'),
+                                                     (20, 8, 'Thrower')],
+                                   opp_player_positions=[(13, 7), (13, 8), (13, 9), (11, 4), (11, 7), (11, 12),
+                                                         (10, 3, 'Catcher'), (10, 13, 'Catcher'),
+                                                         (10, 6, 'Blitzer'), (10, 10, 'Blitzer'),
+                                                         (11, 9, 'Thrower')],
+                                   ball_position=(18, 5)
+                                   )
     return game
 
 
@@ -97,6 +111,6 @@ def draw_game(game):
 
 
 if __name__ == "__main__":
-    draw_game(seven_player_home_threatens_turnover())
+    draw_game(eleven_after_kickoff())
 
     print("")
