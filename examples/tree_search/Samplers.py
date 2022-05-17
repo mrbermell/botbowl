@@ -51,6 +51,10 @@ def scripted_action(game):
         return Action(ActionType.SELECT_PLAYER, player=aa[0].players[0])
 
 
+class UniformPolicy:
+    pass
+
+
 class MockPolicy:
     ActionProbList = List[Tuple[Action, float]]
     ConvertFuncType = Dict[ActionType, Callable[[botbowl.Game, botbowl.ActionChoice], ActionProbList]]

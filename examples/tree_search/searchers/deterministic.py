@@ -1,5 +1,6 @@
 from functools import partial
 from operator import itemgetter
+from time import perf_counter
 from typing import Union, Callable, List, Iterable
 
 import botbowl
@@ -17,6 +18,7 @@ def generic_tree_search_rollout(tree: SearchTree,
                                 sample_action: Callable[[ts.ActionNode, ts.HeuristicVector], botbowl.Action],
                                 cc_cond: search_util.ContinueCondition = None,
                                 back_propagate_with_probability: bool = False,
+                                search_time: float = 3,
                                 ) -> None:
     if cc_cond is None:
         cc_cond = search_util.ContinueCondition()
@@ -73,11 +75,12 @@ def generic_tree_search_rollout(tree: SearchTree,
             n = n.parent
 
     setup_node(tree.root_node)
-    node_queue: List[ts.ActionNode] = [tree.root_node]
+    node_queue = []
+    start_time = perf_counter()
+    while perf_counter() - start_time < search_time:
+        node = tree.root_node if len(node_queue) == 0 else node_queue.pop()
 
-    while len(node_queue) > 0:
-        node = node_queue.pop()
-
+        # noinspection PyTypeChecker
         action = sample_action(node, weights)
 
         if action not in node.explored_actions:
@@ -85,10 +88,13 @@ def generic_tree_search_rollout(tree: SearchTree,
 
         direct_child = node.children[node.explored_actions.index(action)]
 
-        if type(direct_child) is ts.ActionNode:
+        if isinstance(direct_child, ts.ActionNode):
             children = (direct_child,)
         else:
+            # noinspection PyTypeChecker
             children = expand_chance_node(direct_child)
+
+        children: Iterable[ts.ActionNode]
 
         for child_node in children:
             setup_node(child_node)

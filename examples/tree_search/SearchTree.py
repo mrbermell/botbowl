@@ -338,7 +338,10 @@ class SearchTree:
             new_action_nodes.extend(self._look_for_action_nodes(child_node))
         return new_action_nodes
 
-    def to_xml(self, weights: HeuristicVector) -> ET.ElementTree:
+    def to_xml(self, weights: HeuristicVector = None) -> ET.ElementTree:
+        if weights is None:
+            weights = HeuristicVector(score=1, tv_on_pitch=0, ball_position=0, ball_carried=0, ball_marked=0)
+
         root = ET.Element('search_tree')
         self.root_node.to_xml(root, weights)
 
@@ -678,7 +681,7 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     with only_fixed_rolls(game, d6=[6] * (len(rolls) - index_of_failure)):
         while len(botbowl.D6.FixedRolls) > 0:
             if type(game.get_procedure()) not in {procedures.GFI, procedures.Block, procedures.Dodge, procedures.Move,
-                                                  procedures.MoveAction, procedures.BlitzAction}:
+                                                  procedures.MoveAction, procedures.BlitzAction, procedures.HandoffAction}:
                 raise AttributeError("wrong")
             if len(game.get_available_actions()) > 0:
                 raise AttributeError("wrong")

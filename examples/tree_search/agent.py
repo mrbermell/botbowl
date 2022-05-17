@@ -8,22 +8,33 @@ import examples.tree_search as ts
 from botbowl import ActionType, Action
 from examples.tree_search import hashmap
 from examples.tree_search.searchers import search_util
+from examples.tree_search.searchers import deterministic
 from examples.tree_search.searchers.mcts import vanilla_mcts_rollout
+
+default_weights = ts.HeuristicVector(score=1, tv_on_pitch=0.2, ball_carried=0.2, ball_marked=0.05, ball_position=0.005)
 
 
 class SearchAgent(botbowl.Agent):
-    def __init__(self, name,
-                 tree_search_rollout: Callable[[ts.SearchTree], None],
-                 final_action_choice_strategy: Callable[[ts.ActionNode], botbowl.Action],
-                 seconds_per_action: int,
-                 policy: ts.Policy = None,
-                 ):
-        super().__init__(name)
-        self.tree = None
+
+    def __init__(self, *,
+                 search_time=5,
+                 policy: ts.Policy = ts.MockPolicy(),
+                 weights: ts.HeuristicVector = default_weights,
+                 expand_chance_node=deterministic.single_stocastic_chance_node_exp,
+                 expansion_action_policy=deterministic.uct_action_sample,
+                 continue_condition=None,
+                 back_propagate_with_probability=True,
+                 final_action_choice_strategy=search_util.highest_valued_action):
+        super().__init__("SearchBasedBot")
+        self.search_time = search_time
         self.policy = policy
-        self.tree_search_rollout = tree_search_rollout
+        self.weights = weights
+        self.expand_chance_node = expand_chance_node
+        self.expansion_action_policy = expansion_action_policy
+        self.continue_condition = continue_condition
+        self.back_propagate_with_probability = back_propagate_with_probability
         self.final_action_choice_strategy = final_action_choice_strategy
-        self.seconds_per_action = seconds_per_action
+        self.tree = None
 
     def new_game(self, game, team):
         self.tree = ts.SearchTree(game)
@@ -38,15 +49,16 @@ class SearchAgent(botbowl.Agent):
             return scripted_action
 
         self.tree.set_new_root(game)
-        start_time = time.perf_counter()
-        while True:
-            self.tree_search_rollout(self.tree)
+        deterministic.generic_tree_search_rollout(tree=self.tree,
+                                                  weights=self.weights,
+                                                  policy=self.policy,
+                                                  expand_chance_node=self.expand_chance_node,
+                                                  sample_action=self.expansion_action_policy,
+                                                  cc_cond=self.continue_condition,
+                                                  back_propagate_with_probability=self.back_propagate_with_probability)
 
-            if time.perf_counter() - start_time > self.seconds_per_action:
-                break
-
-        action = self.final_action_choice_strategy(self.tree.root_node)
-
+        action = self.final_action_choice_strategy(self.tree.root_node, self.weights)
+        print(action)
         return action
 
     @staticmethod
@@ -122,7 +134,7 @@ def create_baseline_mcts_agent(weights) -> botbowl.Agent:
                       )
     return VanillaMCTSSearchAgent(name='baseline mcts agent',
                                   tree_search_rollout=rollout,
-                                  seconds_per_action=15,
+                                  seconds_per_action=2,
                                   policy=policy,
                                   final_action_choice_strategy=partial(search_util.highest_valued_action,
                                                                        weights=weights))
@@ -132,7 +144,7 @@ def main():
     weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=0.3)
     agent = create_baseline_mcts_agent(weights)
 
-    env_conf = botbowl.ai.env.EnvConf(size=3, pathfinding=True)
+    env_conf = botbowl.ai.env.EnvConf(size=1, pathfinding=True)
     env = botbowl.ai.env.BotBowlEnv(env_conf)
     env.reset(skip_observation=True)
 

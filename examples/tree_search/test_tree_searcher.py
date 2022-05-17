@@ -11,7 +11,6 @@ from botbowl.core import procedure
 from examples.tree_search import hashmap, get_node_value
 from tests.util import get_custom_game_turn, only_fixed_rolls
 
-
 default_weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=1)
 
 
@@ -152,7 +151,7 @@ def test_pickup_score():
     tree.set_new_root(game)
 
     setup_node: ts.ActionNode = first(filter(lambda n: n.simple_hash.find('Setup') > 0, tree.all_action_nodes))
-    assert setup_node.get_accum_prob() == approx(2/3)
+    assert setup_node.get_accum_prob() == approx(2 / 3)
 
     a = search_select_step()
     assert a.action_type == ActionType.MOVE and a.position == Square(3, 3)
@@ -279,7 +278,7 @@ def print_node(node, weights):
             assert child_node is not None
             expected_value = ts.get_node_value(child_node, weights)
             action.player = None
-            print(f"{action}, {visits=}, avg(AV)={action_value/visits:.2f}, EV={expected_value:.2f}")
+            print(f"{action}, {visits=}, avg(AV)={action_value / visits:.2f}, EV={expected_value:.2f}")
 
 
 @pytest.mark.parametrize("tree_searcher", [ts.deterministic_tree_search_rollout,
@@ -302,7 +301,7 @@ def test_mcts(tree_searcher):
     mcts_info = tree.root_node.info
     for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
         action.player = None
-        action_value = np.dot(action_val, weights)/(visits + (visits == 0))
+        action_value = np.dot(action_val, weights) / (visits + (visits == 0))
         print(f"{action}, {visits=}, {action_value=:.4f}")
     print("")
 
@@ -326,7 +325,7 @@ def test_vanilla_mcts():
     mcts_info = root_node.info
     for action, visits, action_val in zip(mcts_info.actions, mcts_info.visits, mcts_info.action_values):
         action.player = None
-        action_value = np.dot(action_val, weights)/(visits + (visits == 0))
+        action_value = np.dot(action_val, weights) / (visits + (visits == 0))
         print(f"{action}, {visits=}, {action_value=:.4f}")
     print("")
 
@@ -474,11 +473,28 @@ def test_deterministic_scenario_outcomes(data):
 
     cc_cond = ts.ContinueCondition(probability=0.01)
 
-    for _ in range(100):
-        ts.deterministic_tree_search_rollout(tree, policy, weights, cc_cond=cc_cond)
+    ts.deterministic_tree_search_rollout(tree, policy, weights, cc_cond=cc_cond, search_time=10)
 
     expected = np.mean([ts.get_node_value(child, weights) for child in tree.root_node.children])
 
     print("")
     print(f"{expected=}")
 
+
+def test_expand_handoff():
+    for i in range(10):
+        game, (scorer, carrier, opp1, opp2) = get_custom_game_turn(player_positions=[(2, 2), (7, 7)],
+                                                                   opp_player_positions=[(7, 8), (7, 6)],
+                                                                   ball_position=(7, 7),
+                                                                   pathfinding_enabled=True,
+                                                                   rerolls=3)
+
+        game.step(Action(ActionType.START_HANDOFF, position=carrier.position))
+        tree = ts.SearchTree(game)
+        tree.expand_action_node(tree.root_node, Action(ActionType.HANDOFF, position=scorer.position))
+        reroll_node = None
+        for key, node in tree.all_action_nodes.data.items():
+            if key.find("Reroll (Dodge)") != -1:
+                reroll_node = node[0]
+                break
+        tree.expand_action_node(reroll_node, Action(ActionType.USE_REROLL))
