@@ -20,6 +20,13 @@ class InvalidActionError(Exception):
     pass
 
 
+class IllegalActionWarning:
+    def __init__(self, msg=""):
+        self.msg = msg
+
+    def __bool__(self):
+        return self.msg == ""
+
 class Game:
     replay: Optional[Replay]
     game_id: str
@@ -277,7 +284,7 @@ class Game:
             self.replay.record_step(self)
             self.replay.dump(self)
 
-    def _is_action_allowed(self, action: Action) -> bool:
+    def _is_action_allowed(self, action: Action) -> IllegalActionWarning:
         """
         Checks whether the specified action is allowed by comparing to actions in self.state.available_actions.
         :param action:
@@ -289,14 +296,11 @@ class Game:
             if action.action_type == action_choice.action_type:
                 # Type checking
                 if type(action.action_type) is not ActionType:
-                    print("Illegal action type: ", type(action.action_type))
-                    return False
+                    return IllegalActionWarning(f"Illegal action type: {type(action.action_type)}")
                 if action.player is not None and not isinstance(action.player, Player):
-                    print("Illegal player type: ", type(action.action_type), action, self.state.stack.peek())
-                    return False
+                    return IllegalActionWarning(f"Illegal player type: {type(action.action_type)}, {action}, {self.state.stack.peek()}")
                 if action.position is not None and not isinstance(action.position, Square):
-                    print("Illegal position type:", type(action.position), action.action_type.name)
-                    return False
+                    return IllegalActionWarning(f"Illegal position type: {type(action.position)}, {action.action_type.name}")
                 # Check if player argument is used instead of position argument
                 if len(action_choice.players) == 0 and action.player is not None and action.position is None:
                     action.position = action.player.position
@@ -306,19 +310,18 @@ class Game:
                 # Check player argument
                 if len(action_choice.players) > 1 and action.player not in action_choice.players:
                     if action.player is None:
-                        print("Illegal player: None")
+                        return IllegalActionWarning("Illegal player: None")
                     else:
-                        print("Illegal player:", action.player.to_json(), action.action_type.name)
-                    return False
+                        return IllegalActionWarning(f"Illegal player: {action.player.to_json()}, {action.action_type.name}")
                 # Check position argument
                 if len(action_choice.positions) > 0 and action.position not in action_choice.positions:
                     if action.position is None:
-                        print("Illegal position: None")
+                        return IllegalActionWarning("Illegal position: None")
                     else:
-                        print("Illegal position:", action.position.to_json(), action.action_type.name)
-                    return False
+                        return IllegalActionWarning(f"Illegal position: {action.position.to_json()}, {action.action_type.name}")
+
                 return True
-        return False
+        return IllegalActionWarning(f"Illegal action type: {action.action_type}")
 
     def _safe_act(self) -> Optional[Action]:
         """
