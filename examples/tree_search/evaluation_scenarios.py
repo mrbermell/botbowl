@@ -96,7 +96,8 @@ def eleven_after_kickoff():
                                                          (10, 3, 'Catcher'), (10, 13, 'Catcher'),
                                                          (10, 6, 'Blitzer'), (10, 10, 'Blitzer'),
                                                          (11, 9, 'Thrower')],
-                                   ball_position=(18, 5)
+                                   ball_position=(18, 5),
+                                   turn=5
                                    )
     return game
 
