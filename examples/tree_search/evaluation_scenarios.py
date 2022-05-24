@@ -81,7 +81,19 @@ def five_player_hopeless():
                                    ball_position=(13, 5),
                                    rerolls=3,
                                    size=11,
-                                   turn=1,
+                                   turn=6,
+                                   pathfinding_enabled=True)
+
+    return game
+
+
+def five_player_easy_home_score():
+    game, _ = get_custom_game_turn(player_positions=[(5, 3), (5, 5)],
+                                   opp_player_positions=[(4, 4)],
+                                   ball_position=(2, 5),
+                                   rerolls=0,
+                                   size=5,
+                                   turn=7,
                                    pathfinding_enabled=True)
 
     return game
@@ -97,7 +109,24 @@ def eleven_after_kickoff():
                                                          (10, 6, 'Blitzer'), (10, 10, 'Blitzer'),
                                                          (11, 9, 'Thrower')],
                                    ball_position=(18, 5),
+                                   size=11,
                                    turn=5
+                                   )
+    return game
+
+
+def seven_after_kickoff():
+    game, _ = get_custom_game_turn(player_positions=[(11, 3), (11, 5), (11, 7),
+                                                     (13, 5, 'Catcher'),
+                                                     (11, 4, 'Blitzer'), (11, 6, 'Blitzer'),
+                                                     (16, 5, 'Thrower')],
+                                   opp_player_positions=[(10, 4), (10, 5), (10, 6),
+                                                         (8, 8, 'Catcher'),
+                                                         (7, 3, 'Blitzer'), (7, 7, 'Blitzer'),
+                                                         (8, 2, 'Thrower')],
+                                   ball_position=(13, 3),
+                                   size=7,
+                                   turn=4
                                    )
     return game
 
@@ -112,6 +141,6 @@ def draw_game(game):
 
 
 if __name__ == "__main__":
-    draw_game(eleven_after_kickoff())
+    draw_game(five_player_easy_home_score())
 
     print("")
