@@ -196,10 +196,12 @@ class ChanceNode(Node):
     def __init__(self, game: botbowl.Game, parent: Optional[Node]):
         super().__init__(game, parent)
         self.child_probability = []
+        self.visits = np.array([])
 
     def connect_child(self, child_node: Node, prob: float):
         super()._connect_child(child_node)
         self.child_probability.append(prob)
+        self.visits = np.concatenate((self.visits, [0]))  # in fact self.visits.append(0)
 
     def get_child_prob(self, child_node: Node) -> float:
         assert child_node in self.children

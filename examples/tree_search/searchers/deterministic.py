@@ -129,6 +129,21 @@ def single_stocastic_chance_node_exp(node: ts.ChanceNode) -> Iterable[ts.ActionN
     return np.random.choice(children, 1, p=prob)[0],
 
 
+def single_deterministic_change_node_exp(node: ts.ChanceNode) -> Iterable[ts.ActionNode]:
+    while isinstance(node, ts.ChanceNode):
+        visit_sum = sum(node.visits)
+        if visit_sum == 0:
+            visit_sum = 1
+        index = np.argmax(node.child_probability - node.visits/visit_sum)
+        node.visits[index] += 1
+        node = node.children[index]
+
+    assert isinstance(node, ts.ActionNode)
+    yield node
+    return
+
+
+
 deterministic_tree_search_rollout = partial(generic_tree_search_rollout,
                                             sample_action=uct_action_sample,
                                             expand_chance_node=determinstic_chance_node_expansion,
