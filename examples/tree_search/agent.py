@@ -75,6 +75,13 @@ class SearchAgent(botbowl.Agent):
         return None
 
 
+def create_dmcts_bot():
+    dmcts_bot = SearchAgent(search_time=5,
+                            expand_chance_node = deterministic.single_deterministic_change_node_exp,
+                            )
+
+
+
 class VanillaMCTSSearchAgent(botbowl.Agent):
     def __init__(self, name,
                  tree_search_rollout: Callable[[ts.ActionNode, botbowl.Game, Dict[str, ts.ActionNode]], None],
