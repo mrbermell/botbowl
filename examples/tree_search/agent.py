@@ -77,10 +77,11 @@ class SearchAgent(botbowl.Agent):
 
 def create_dmcts_bot():
     dmcts_bot = SearchAgent(search_time=5,
-                            expand_chance_node = deterministic.single_deterministic_change_node_exp,
+                            expand_chance_node=deterministic.single_deterministic_change_node_exp,
+                            back_propagate_with_probability=False,
+                            final_action_choice_strategy=search_util.most_visited_action
                             )
-
-
+    return dmcts_bot
 
 class VanillaMCTSSearchAgent(botbowl.Agent):
     def __init__(self, name,
@@ -149,9 +150,9 @@ def create_baseline_mcts_agent(weights) -> botbowl.Agent:
 
 def main():
     weights = ts.HeuristicVector(score=1, ball_marked=0.1, ball_carried=0.2, ball_position=0.01, tv_on_pitch=0.3)
-    agent = create_baseline_mcts_agent(weights)
+    agent = create_dmcts_bot()
 
-    env_conf = botbowl.ai.env.EnvConf(size=1, pathfinding=True)
+    env_conf = botbowl.ai.env.EnvConf(size=5, pathfinding=True)
     env = botbowl.ai.env.BotBowlEnv(env_conf)
     env.reset(skip_observation=True)
 

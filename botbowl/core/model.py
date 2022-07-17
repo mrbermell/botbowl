@@ -919,6 +919,8 @@ class D6(Die, Immutable):
         if len(D6.FixedRolls) > 0:
             self.value = D6.FixedRolls.pop(0)
         else:
+            if rng is None:
+                assert False
             self.value = rng.randint(1, 7)
 
     def __repr__(self):

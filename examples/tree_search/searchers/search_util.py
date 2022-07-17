@@ -5,9 +5,10 @@ import numpy as np
 
 import botbowl
 import examples.tree_search as ts
+from botbowl.core import procedure
 
 
-def most_visited_action(node: ts.ActionNode) -> botbowl.Action:
+def most_visited_action(node: ts.ActionNode, weights) -> botbowl.Action:
     index = np.argmax(node.info.visits)
     return node.info.actions[index]
 
@@ -56,7 +57,7 @@ def get_team_turn_num(g: botbowl.Game, team: botbowl.Team) -> int:
     return g.state.half * g.config.rounds + team.state.turn
 
 
-def continue_expansion(node: ts.ActionNode, game, cc_cond, scores, half, end_turn_at, team) -> bool:
+def continue_expansion(node: ts.ActionNode, game: botbowl.Game, cc_cond, scores, half, end_turn_at, team) -> bool:
     if game.state.game_over:
         return False
     if cc_cond.single_drive and (get_score_sum(game) != scores or game.state.half != half):
@@ -65,13 +66,18 @@ def continue_expansion(node: ts.ActionNode, game, cc_cond, scores, half, end_tur
         return False
 
     # This ends the search after {my_team} has played its final turn, if opp_as_final_turn
-    if (not cc_cond.opp_as_final_turn) and team.state.turn == end_turn_at - 1:
-        turn = game.current_turn
-        if turn is not None and turn.team is not team:
-            return False
+    #if (not cc_cond.opp_as_final_turn) and team.state.turn == end_turn_at - 1:
+    #    turn = game.current_turn
+    #    if turn is not None and turn.team is not team:
+    #        return False
 
-    if cc_cond.probability > 0 and node.get_accum_prob() < cc_cond.probability:
+    #if cc_cond.probability > 0 and node.get_accum_prob() < cc_cond.probability:
+    #    return False
+
+    if type(game.get_procedure() is procedure.Turn) and not node.info.visited_once:
+        node.info.visited_once = True
         return False
+
     return True
 
 

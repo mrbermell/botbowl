@@ -40,6 +40,7 @@ class MCTS_Info:
     heuristic: np.ndarray
     reward: np.ndarray
     state_value: float
+    visited_once: bool = dataclasses.field(default=False, init=False)
 
 
 class Node(ABC):
@@ -428,11 +429,11 @@ def expand_none_action(game: botbowl.Game, parent: Node, moving_handled=False, p
             assert len(botbowl.D6.FixedRolls) == 0
             game.revert(parent.step_nbr)
             return return_node
-        try:
-            with only_fixed_rolls(game):
-                game.step()
-        except AttributeError as e:
-            raise e
+        #try:
+        with only_fixed_rolls(game):
+            game.step()
+        #except AttributeError as e:
+            #    raise e
 
     action_node = ActionNode(game, parent)
     game.revert(parent.step_nbr)
@@ -452,7 +453,7 @@ def expand_throw_in(game: botbowl.Game, parent: Node) -> Node:
     elif game.config.throw_in_dice == "d6":
         d6_fixes = [4]
     elif game.config.throw_in_dice == "d3":
-        d3_fixes.append = [1]  # distance roll is sampled after direction roll
+        d3_fixes.append(1)  # distance roll is sampled after direction roll
 
     with only_fixed_rolls(game, d3=d3_fixes, d6=d6_fixes):
         game.step()
@@ -566,7 +567,8 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
         else:
             final_step = active_proc.position
 
-    is_pickup = game.get_ball().position == final_step and not game.get_ball().is_carried
+    ball = game.get_ball()
+    is_pickup = ball.position == final_step and not ball.is_carried and ball.on_ground
     path = move_action_proc.paths[final_step]
 
     if len(path.rolls) != len(path.steps):
@@ -669,6 +671,10 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
     except ValueError as e:
         raise e
 
+    thingy = None
+    if path.prob < 0.7 and player.has_skill(Skill.DODGE) and len(rolls) > 1:
+        thingy = "asdf"
+
     # STEP UNTIL FAILURE (possibly no steps at all)
     with only_fixed_rolls(game, d6=[6] * index_of_failure):
         while len(botbowl.D6.FixedRolls) > 0:
@@ -695,6 +701,17 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
 
     assert debug_step_count == game.get_step()
 
+    if thingy is not None:
+        thingy = thingy
+
+    if player.has_skill(Skill.DODGE):
+        assert player.can_use_skill(Skill.DODGE)
+
+    # step until GFI or Dodge procedure
+    with only_fixed_rolls(game):
+        while type(game.get_procedure()) not in {procedures.GFI, procedures.Dodge}:
+            game.step()
+
     # FAILURE SCENARIO
     fail_rolls = [1]
     if type(game.get_procedure()) is procedures.Dodge and player.can_use_skill(Skill.DODGE):
@@ -705,12 +722,15 @@ def expand_moving(game: botbowl.Game, parent: Node) -> Node:
             if len(game.get_available_actions()) > 0:
                 raise AttributeError("wrong")
             game.step()
-    if type(game.get_procedure()) is procedures.Reroll and len(game.get_available_actions()) == 0:
+    while type(game.get_procedure()) in {procedures.Reroll, procedures.Dodge, procedures.GFI} and len(game.get_available_actions()) == 0:
         with only_fixed_rolls(game):
             game.step()
 
-    if type(game.get_procedure()) is {procedures.Dodge, procedures.GFI}:
-        raise ValueError()
+    #proc = game.get_procedure()
+    #if type(proc) is procedures.Dodge or type(proc) is procedures.GFI:
+    #    with only_fixed_rolls(game):
+    #        game.step()
+        #raise ValueError()
 
     fail_node = expand_none_action(game, new_parent, moving_handled=True)
     new_parent.connect_child(fail_node, 1 - probability_success)
@@ -725,11 +745,16 @@ def expand_armor(game: botbowl.Game, parent: Node) -> Node:
     proc: procedures.Armor = game.get_procedure()
     assert not proc.foul
 
-    p_armorbreak = accumulated_prob_2d_roll[proc.player.get_av() + 1]
-    new_parent = ChanceNode(game, parent)
-    expand_with_fixes(game, new_parent, p_armorbreak, d6=[6, 6])  # Armor broken
-    expand_with_fixes(game, new_parent, 1 - p_armorbreak, d6=[1, 1])  # Armor not broken
-    return new_parent
+    # this forces no armor breaks
+    with only_fixed_rolls(game, d6=[1, 1]):
+        game.step()
+    return expand_none_action(game, parent)
+
+    #p_armorbreak = accumulated_prob_2d_roll[proc.player.get_av() + 1]
+    #new_parent = ChanceNode(game, parent)
+    #expand_with_fixes(game, new_parent, p_armorbreak, d6=[6, 6])  # Armor broken
+    #expand_with_fixes(game, new_parent, 1 - p_armorbreak, d6=[1, 1])  # Armor not broken
+    #return new_parent
 
 
 def expand_injury(game: botbowl.Game, parent: Node) -> Node:
@@ -898,6 +923,8 @@ def expand_with_fixes(game, parent, probability, **fixes):
     try:
         with only_fixed_rolls(game, **fixes):
             game.step()
+            while len(botbowl.D6.FixedRolls) > 0:
+                game.step()
     except AssertionError as e:
         raise e
     new_node = expand_none_action(game, parent)

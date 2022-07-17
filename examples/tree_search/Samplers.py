@@ -120,6 +120,9 @@ class MockPolicy:
         is_home = player.team is game.state.home_team
 
         for pos, path in zip(action_choice.positions, action_choice.paths):
+            if path.prob < 0.5:
+                continue
+
             prob = path.prob
             if ball_on_floor_pos is not None:
                 if pos == ball_on_floor_pos:
